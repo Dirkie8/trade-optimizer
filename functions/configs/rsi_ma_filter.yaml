@@ -1,0 +1,14 @@
+strategy:
+  class: "RSIWithMAFilter"
+  module: "functions.strategies.rsi_ma_filter"
+  results_dir: "RSIWithMAFilter"
+
+name: "RSI with EMA Trend Filter"
+
+parameters:
+  rsi_period: [9, 14, 21]
+  ma_period: [50, 100, 150]
+  oversold: [20, 25, 30]
+  overbought: [70, 75, 80]
+  take_profit_pips: [15, 20, 30, 40]
+  stop_loss_pips: [10, 15, 20, 30]

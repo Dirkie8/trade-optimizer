@@ -1,0 +1,13 @@
+strategy:
+  class: "RSIStrategy"
+  module: "functions.strategies.rsi_strategy"
+  results_dir: "RSIStrategy"
+
+name: "RSI Mean Reversion Strategy"
+
+parameters:
+  rsi_period: [9, 14, 21, 28]              # RSI calculation period
+  oversold: [20, 25, 30, 35]               # Buy threshold
+  overbought: [65, 70, 75, 80]             # Sell threshold
+  take_profit_pips: [15, 20, 30, 40, 50]   # Take profit levels
+  stop_loss_pips: [10, 15, 20, 25, 30]     # Stop loss levels

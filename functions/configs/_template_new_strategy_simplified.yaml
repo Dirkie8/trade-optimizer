@@ -1,0 +1,51 @@
+# SIMPLIFIED STRATEGY CONFIG - Copy & modify this file
+# 
+# FILE ORGANIZATION:
+# - Strategy code: functions/strategies/your_strategy.py
+# - Strategy config: functions/configs/your_strategy.yaml (this file)
+# - Results: results/YourStrategyName/optimizations/ and evaluations/
+#
+# STEPS:
+# 1. Update 'class' to match your strategy class name
+# 2. Update 'module' to point to your strategy file
+# 3. Define your parameter values to test
+# 4. Run: python scripts/optimize_strategy.py --strategy_config <this_file> --main_config configs/main_config.yaml
+
+strategy:
+  class: "YourStrategyClassName"                        # REQUIRED: Must match your class name exactly
+  module: "functions.strategies.your_strategy_file"     # Module path to your strategy file (without .py)
+  results_dir: "YourStrategyClassName"                  # Optional: Folder for results (default: same as class name)
+
+name: "Your Strategy Name"  # Optional: Human-readable name
+
+# Parameter grid - optimizer will test all combinations
+# Start with 2-3 values per parameter for quick testing
+parameters:
+  # === EXAMPLE 1: RSI Strategy ===
+  # rsi_period: [14, 21]
+  # oversold: [25, 30]
+  # overbought: [70, 75]
+  # take_profit_pips: [20, 30]
+  # stop_loss_pips: [15, 20]
+  
+  # === EXAMPLE 2: Moving Average ===
+  # short_period: [10, 20]
+  # long_period: [50, 100]
+  # take_profit_pips: [20, 30]
+  # stop_loss_pips: [15, 20]
+  
+  # === EXAMPLE 3: Bollinger Bands ===
+  # bb_period: [20, 30]
+  # bb_std_dev: [2.0, 2.5]
+  # take_profit_pips: [20, 30]
+  # stop_loss_pips: [15, 20]
+  
+  # === YOUR PARAMETERS (replace examples above) ===
+  period: [10, 20, 30]
+  threshold: [25, 30, 35]
+  take_profit_pips: [20, 30]
+  stop_loss_pips: [15, 20]
+
+# Run optimization:
+# Grid search:  python scripts/optimize_strategy.py --strategy_config <this_file> --main_config configs/main_config.yaml --method grid
+# Random search: python scripts/optimize_strategy.py --strategy_config <this_file> --main_config configs/main_config.yaml --method random --n_random 50

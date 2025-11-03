@@ -1,0 +1,10 @@
+strategy:
+  class: "MovingAverageCross"
+  module: "functions.strategies.moving_average_cross"  # Strategy module path
+  results_dir: "MovingAverageCross"  # Optional; subdirectory under results/ for this strategy's outputs
+name: "Moving Average Cross Strategy"
+parameters:
+  short_ma_period: [10, 20, 30]
+  long_ma_period: [100, 125, 150]
+  take_profit_pips: [20, 40, 60]
+  stop_loss_pips: [15, 30, 45]

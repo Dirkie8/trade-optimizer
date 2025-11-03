@@ -1,0 +1,12 @@
+strategy:
+  class: "EMACrossover"
+  module: "functions.strategies.ema_crossover"
+  results_dir: "EMACrossover"
+
+name: "EMA Crossover Strategy"
+
+parameters:
+  fast_period: [5, 8, 10, 12, 14]
+  slow_period: [20, 26, 30, 35, 40, 50]
+  take_profit_pips: [15, 20, 25, 30, 40]
+  stop_loss_pips: [10, 15, 20, 25, 30]

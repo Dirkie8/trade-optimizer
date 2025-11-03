@@ -1,0 +1,72 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch hybrid_optimize (debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${command:python.interpreterPath}",
+            "program": "${workspaceFolder}/scripts/hybrid_optimize.py",
+            "args": [
+                "--strategy_config", "functions/configs/atr_channel_breakout.yaml",
+                "--main_config", "configs/main_config.yaml",
+                "--random_samples", "5",
+                "--tpe_trials", "10",
+                "--n_jobs", "1",
+                "--walk-forward",
+                "--n-folds", "2"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "subProcess": true,
+            "env": {
+                "PYTHONUNBUFFERED": "1",
+                "NO_COLOR": "1"
+            }
+        },
+        {
+            "name": "Launch optimize_strategy (grid)",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${command:python.interpreterPath}",
+            "program": "${workspaceFolder}/scripts/optimize_strategy.py",
+            "args": [
+                "--strategy_config", "functions/configs/atr_channel_breakout.yaml",
+                "--main_config", "configs/main_config.yaml",
+                "--method", "grid",
+                "--n_random", "200",
+                "--n_jobs", "4"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "subProcess": true,
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            }
+        },
+        {
+            "name": "Attach to debugpy (localhost:5678)",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "justMyCode": true,
+            "subProcess": true
+        },
+        {
+            "name": "Attach using Process ID (local)",
+            "type": "debugpy",
+            "request": "attach",
+            "processId": "${command:pickProcess}",
+            "justMyCode": true,
+            "subProcess": true
+        }
+    ]
+}

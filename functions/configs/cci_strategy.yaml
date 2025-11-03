@@ -1,0 +1,12 @@
+strategy:
+  class: "CCIStrategy"
+  module: "functions.strategies.cci_strategy"
+  results_dir: "CCIStrategy"
+
+name: "CCI Threshold Strategy"
+
+parameters:
+  cci_period: [14, 20, 30]
+  threshold: [100, 120, 150]
+  take_profit_pips: [15, 20, 30, 40]
+  stop_loss_pips: [10, 15, 20, 30]

@@ -1,0 +1,19 @@
+strategy:
+  class: "MultiIndicatorConfluence"
+  module: "functions.strategies.multi_indicator_confluence"
+  results_dir: "MultiIndicatorConfluence"
+
+name: "Multi-Indicator Confluence Strategy"
+
+parameters:
+  rsi_period: [14, 21]                     # RSI period
+  rsi_oversold: [25, 30]                   # RSI oversold level
+  rsi_overbought: [70, 75]                 # RSI overbought level
+  macd_fast: [12, 16]                      # MACD fast EMA
+  macd_slow: [26, 30]                      # MACD slow EMA
+  macd_signal: [9, 11]                     # MACD signal period
+  bb_period: [20, 25]                      # Bollinger period
+  bb_std_dev: [2.0, 2.5]                   # BB std dev multiplier
+  confluence_required: [2, 3]              # Min indicators that must agree
+  take_profit_pips: [20, 30, 40, 50]       # Take profit levels
+  stop_loss_pips: [15, 20, 25, 30]         # Stop loss levels

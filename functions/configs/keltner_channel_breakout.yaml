@@ -1,0 +1,13 @@
+strategy:
+  class: "KeltnerChannelBreakout"
+  module: "functions.strategies.keltner_channel_breakout"
+  results_dir: "KeltnerChannelBreakout"
+
+name: "Keltner Channel Breakout"
+
+parameters:
+  ema_period: [20, 30]
+  atr_period: [10, 14, 20]
+  multiplier: [1.5, 2.0, 2.5]
+  take_profit_pips: [15, 20, 30, 40]
+  stop_loss_pips: [10, 15, 20, 30]

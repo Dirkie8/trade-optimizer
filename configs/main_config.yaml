@@ -1,0 +1,22 @@
+account:
+  starting_balance: 100
+  risk_per_trade: 0.01
+  spread_pips: 0.2
+  commission_per_trade: 0.0
+  leverage: 100
+
+broker:
+  name: exness_demo
+  account_id: "1234567"
+  api_key: "YOUR_API_KEY_PLACEHOLDER"
+
+# Data file is constructed using candle_data_list_{default_symbol}_{default_timeframe converted to seconds}s.json
+general:
+  default_symbol: "frxEURUSD"
+  default_timeframe: "1h"
+  # Train/test split for optimization workflow
+  # 1.0 means optimize on full data (no evaluation phase).
+  # e.g., 0.8 = first 80% for train (optimize), last 20% for test (evaluate top-N)
+  train_ratio: 0.8
+  # Number of top parameter sets from optimization to evaluate on test split
+  evaluation_top_n: 50

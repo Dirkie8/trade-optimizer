@@ -1,0 +1,11 @@
+strategy:
+  class: "HeikinAshiTrend"
+  module: "functions.strategies.heikin_ashi_trend"
+  results_dir: "HeikinAshiTrend"
+
+name: "Heikin Ashi Trend"
+
+parameters:
+  ema_period: [34, 50, 89]
+  take_profit_pips: [15, 20, 30, 40]
+  stop_loss_pips: [10, 15, 20, 30]

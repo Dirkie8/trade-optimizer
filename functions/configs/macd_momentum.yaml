@@ -1,0 +1,13 @@
+strategy:
+  class: "MACDMomentum"
+  module: "functions.strategies.macd_momentum"
+  results_dir: "MACDMomentum"
+
+name: "MACD Momentum Strategy"
+
+parameters:
+  macd_fast: [8, 12, 16]                   # Fast EMA period
+  macd_slow: [21, 26, 31]                  # Slow EMA period
+  macd_signal: [7, 9, 11]                  # Signal line period
+  take_profit_pips: [15, 20, 30, 40, 50]   # Take profit levels
+  stop_loss_pips: [10, 15, 20, 25, 30]     # Stop loss levels

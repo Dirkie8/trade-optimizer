@@ -1,0 +1,140 @@
+# ============================================================================
+# STRATEGY CONFIG TEMPLATE
+# ============================================================================
+#
+# QUICK START:
+# 1. Copy this file to: functions/configs/my_strategy.yaml
+# 2. Update the 'class' field to match your strategy class name
+# 3. Update the 'results_dir' to organize your results
+# 4. Define your parameter grid under 'parameters'
+# 5. Run optimization!
+#
+# PARAMETER OPTIMIZATION:
+# - The optimizer will test every combination of parameter values (grid search)
+# - Or randomly sample combinations (random search)
+# - Each parameter should be a list of values to test
+# - More values = longer optimization time but more thorough search
+#
+# NAMING CONVENTIONS:
+# - class: Must exactly match your Python class name (case-sensitive)
+# - results_dir: Used to organize results; typically same as class name
+# - name: Human-readable display name (can include spaces)
+#
+# ============================================================================
+
+strategy:
+  # REQUIRED: Class name of your strategy (must match exactly)
+  class: "YourStrategyClassName"
+  
+  # OPTIONAL: Module path where your strategy is defined
+  # This should point to the Python module path (without .py extension)
+  # Example: "functions.strategies.my_rsi_strategy" for file functions/strategies/my_rsi_strategy.py
+  module: "functions.strategies.your_strategy_file"
+  
+  # OPTIONAL: Directory name for saving results
+  # Default: Same as class name
+  # Results will be saved to: results/{results_dir}/optimizations/ and results/{results_dir}/evaluations/
+  results_dir: "YourStrategyClassName"
+
+# OPTIONAL: Human-readable strategy name (for display purposes)
+name: "Your Strategy Display Name"
+
+# ============================================================================
+# PARAMETER GRID
+# ============================================================================
+# Define all parameters your strategy needs
+# The optimizer will test different combinations of these values
+#
+# TIPS:
+# - Start with fewer values (2-3 per parameter) for quick testing
+# - Add more values once you know your strategy works
+# - Use grid search for exhaustive testing (all combinations)
+# - Use random search for faster exploration (--method random --n_random 50)
+#
+# COMMON PARAMETERS:
+# - Always include take_profit_pips and stop_loss_pips
+# - Add strategy-specific parameters (indicators, thresholds, etc.)
+# ============================================================================
+
+parameters:
+  # -------------------------------------------------------------------------
+  # EXAMPLE 1: RSI STRATEGY PARAMETERS
+  # -------------------------------------------------------------------------
+  # Uncomment and modify for RSI-based strategies:
+  
+  # rsi_period: [14, 21, 28]      # RSI calculation period
+  # oversold: [20, 25, 30]        # Buy threshold (RSI below this)
+  # overbought: [70, 75, 80]      # Sell threshold (RSI above this)
+  # take_profit_pips: [20, 30, 40, 50]
+  # stop_loss_pips: [15, 20, 25, 30]
+  
+  # -------------------------------------------------------------------------
+  # EXAMPLE 2: MOVING AVERAGE CROSSOVER PARAMETERS
+  # -------------------------------------------------------------------------
+  # Uncomment and modify for MA crossover strategies:
+  
+  # short_ma_period: [10, 20, 30]
+  # long_ma_period: [50, 100, 150, 200]
+  # take_profit_pips: [20, 30, 40]
+  # stop_loss_pips: [15, 20, 25]
+  
+  # -------------------------------------------------------------------------
+  # EXAMPLE 3: BOLLINGER BAND PARAMETERS
+  # -------------------------------------------------------------------------
+  # Uncomment and modify for Bollinger Band strategies:
+  
+  # bb_period: [20, 30, 40]           # Period for moving average
+  # bb_std_dev: [1.5, 2.0, 2.5]       # Standard deviation multiplier
+  # take_profit_pips: [20, 30, 40]
+  # stop_loss_pips: [15, 20, 25]
+  
+  # -------------------------------------------------------------------------
+  # EXAMPLE 4: MACD PARAMETERS
+  # -------------------------------------------------------------------------
+  # Uncomment and modify for MACD strategies:
+  
+  # macd_fast: [8, 12, 16]
+  # macd_slow: [21, 26, 31]
+  # macd_signal: [7, 9, 11]
+  # take_profit_pips: [20, 30, 40]
+  # stop_loss_pips: [15, 20, 25]
+  
+  # -------------------------------------------------------------------------
+  # YOUR CUSTOM PARAMETERS
+  # -------------------------------------------------------------------------
+  # Replace this section with your strategy's parameters
+  # Remember: parameter names must match what your strategy expects in self.config
+  
+  # Example placeholder parameters (replace with your own):
+  parameter1: [10, 20, 30]
+  parameter2: [0.5, 1.0, 1.5]
+  take_profit_pips: [20, 30, 40]
+  stop_loss_pips: [15, 20, 25]
+
+# ============================================================================
+# OPTIMIZATION EXAMPLES
+# ============================================================================
+#
+# Grid search (tests all combinations):
+#   python scripts/optimize_strategy.py \
+#       --strategy_config functions/configs/my_strategy.yaml \
+#       --main_config configs/main_config.yaml \
+#       --method grid \
+#       --n_jobs 4
+#
+# Random search (tests N random combinations):
+#   python scripts/optimize_strategy.py \
+#       --strategy_config functions/configs/my_strategy.yaml \
+#       --main_config configs/main_config.yaml \
+#       --method random \
+#       --n_random 100 \
+#       --n_jobs 4
+#
+# Custom output location:
+#   python scripts/optimize_strategy.py \
+#       --strategy_config functions/configs/my_strategy.yaml \
+#       --main_config configs/main_config.yaml \
+#       --method grid \
+#       --output results/custom/path/results.csv
+#
+# ============================================================================

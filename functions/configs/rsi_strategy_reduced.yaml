@@ -1,0 +1,17 @@
+strategy:
+  class: "RSIStrategy"
+  module: "functions.strategies.rsi_strategy"
+  results_dir: "RSIStrategy"
+
+name: "RSI Mean Reversion Strategy (Reduced Params)"
+
+# Reduced parameter ranges to limit overfitting
+# Narrower ranges = less chance of finding spurious correlations
+parameters:
+  rsi_period: [14, 21]                     # Standard RSI periods only
+  oversold: [25, 30]                       # Conservative oversold levels
+  overbought: [70, 75]                     # Conservative overbought levels
+  take_profit_pips: [20, 30, 40]           # Moderate targets
+  stop_loss_pips: [10, 15, 20]             # Tight stops
+
+# Total combinations: 2 * 2 * 2 * 3 * 3 = 72 (vs ~800 in full config)

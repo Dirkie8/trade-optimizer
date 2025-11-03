@@ -1,0 +1,13 @@
+strategy:
+  class: "TripleMovingAverage"
+  module: "functions.strategies.triple_moving_average"
+  results_dir: "TripleMovingAverage"
+
+name: "Triple EMA Alignment Strategy"
+
+parameters:
+  short_period: [5, 8, 10, 12]
+  mid_period: [20, 26, 30]
+  long_period: [50, 80, 100, 150]
+  take_profit_pips: [15, 20, 30, 40]
+  stop_loss_pips: [10, 15, 20, 30]

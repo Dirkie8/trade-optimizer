@@ -1,0 +1,12 @@
+strategy:
+  class: "ADXTrend"
+  module: "functions.strategies.adx_trend"
+  results_dir: "ADXTrend"
+
+name: "ADX Trend Strategy"
+
+parameters:
+  adx_period: [14, 20]
+  adx_threshold: [18, 20, 25]
+  take_profit_pips: [15, 20, 30, 40]
+  stop_loss_pips: [10, 15, 20, 30]

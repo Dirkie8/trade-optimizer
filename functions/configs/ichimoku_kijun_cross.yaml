@@ -1,0 +1,12 @@
+strategy:
+  class: "IchimokuKijunCross"
+  module: "functions.strategies.ichimoku_kijun_cross"
+  results_dir: "IchimokuKijunCross"
+
+name: "Ichimoku Kijun Cross"
+
+parameters:
+  tenkan_period: [7, 9, 12]
+  kijun_period: [22, 26, 34]
+  take_profit_pips: [15, 20, 30, 40]
+  stop_loss_pips: [10, 15, 20, 30]

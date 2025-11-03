@@ -1,0 +1,208 @@
+# Run optimization
+#-----------------
+#-----------------
+
+# Normal run:
+python scripts/optimize_strategy.py \         
+    --strategy_config functions/configs/example_strategy.yaml \
+    --main_config configs/main_config.yaml \
+    --method grid \                   # Grid testes ALL combinations, random selects n random combinations
+    --n_random 20 \
+    --n_jobs 4
+
+python scripts/evaluate_strategy.py \       
+    --strategy_config functions/configs/stochastic_oscillator.yaml \
+    --main_config configs/main_config.yaml \
+    --optimization_csv results/evaluations/evaluation_results.csv
+
+&&&&&&&& Batch
+./optimize_all_strategies.sh --method random --n_random 500 --n_jobs 5
+
+OR
+
+# Run with walk-forward to reduce overfitting
+#--------------------------------------------
+python scripts/optimize_strategy.py \
+  --strategy_config functions/configs/rsi_strategy.yaml \
+  --main_config configs/main_config.yaml \
+  --method random \
+  --n_random 50 \
+  --walk-forward \
+  --n-folds 5 \
+  --sort-by consistency_score
+
+&&&&&&&& Batch
+./optimize_with_walk_forward.sh
+
+OR
+
+# Combine random exploration with tpe optimizer
+#-----------------------
+python scripts/hybrid_optimize.py \
+  --strategy_config functions/configs/rsi_strategy.yaml \
+  --main_config configs/main_config.yaml \
+  --random_samples 30 \
+  --tpe_trials 50 \
+  --walk-forward
+
+OR
+
+# Combine gradient optimization + overfitting prevention:
+#--------------------------------------------------------
+python scripts/optimize_strategy.py \
+  --strategy_config functions/configs/rsi_strategy.yaml \
+  --main_config configs/main_config.yaml \
+  --method tpe \
+  --n_trials 50 \
+  --walk-forward \
+  --n-folds 3
+
+
+# Best approach: random + tpe + walk-forward
+#-------------------------------------------
+python scripts/hybrid_optimize.py \
+  --strategy_config functions/configs/rsi_strategy.yaml \
+  --main_config configs/main_config.yaml \
+  --random_samples 200 \
+  --tpe_trials 50 \
+  --walk-forward \
+  --n-folds 4 \
+  --n_jobs 1
+
+&&&&&& Batch with logs
+mkdir -p logs
+ts=$(date "+%Y-%m-%d_%H-%M-%S")
+./optimize_hybrid_batch.sh \
+  --random_samples 200 \
+  --tpe_trials 50 \
+  --walk-forward \
+  --n-folds 4 \
+  --n_jobs 5 \
+  2>&1 | tee "logs/optim_${ts}.log"
+
+./optimize_hybrid_batch.sh --help
+
+15 minute run
+./optimize_hybrid_batch.sh \
+  --random_samples 10 \
+  --tpe_trials 10 \
+  --walk-forward \
+  --n-folds 3 \
+  --n_jobs 5
+
+
+
+# How walk through works:
+#%%%---------------------
+########Without wt:
+For each of 50 random parameter combinations:
+    Run backtest on 80% of data (training)
+    → ONE backtest per parameter set
+    
+Total: 50 backtests
+
+Then take top 50 and evaluate on 20% (test set)
+Total: 50 + 50 = 100 backtests
+
+######## With wt:
+For each of 50 random parameter combinations:
+    Split data into 5 folds
+    
+    Fold 1: Train on [0-20%] → Test on [20-40%]  ← 1 backtest
+    Fold 2: Train on [0-40%] → Test on [40-60%]  ← 1 backtest
+    Fold 3: Train on [0-60%] → Test on [60-80%]  ← 1 backtest
+    Fold 4: Train on [0-80%] → Test on [80-100%] ← 1 backtest
+    
+    Average results from 4 test folds
+    → FOUR backtests per parameter set (actually 4, not 5, because fold 1 has no training data)
+
+Total: 50 × 4 = 200 backtests during optimization
+
+Then still evaluate top 50 on hold-out test set
+Total: 200 + 50 = 250 backtests
+
+
+
+
+
+# Run best parameters over full dataset/ evaluate best params
+#------------------------------------------------------------
+scripts/evaluate_strategy.py \
+  --strategy_config functions/configs/rsi_strategy.yaml \
+  --main_config configs/main_config.yaml
+
+# Run backtest on 100% of data with best StochasticOscillator parameters
+./run_full_backtest.sh StochasticOscillator
+OR all
+./run_full_backtest.sh --all
+
+
+
+# Run plotting scripts:
+#----------------------
+# Create plot
+python scripts/plot_results.py --input results/RSIStrategy/full_dataset_backtest.json
+# Create plot and show
+python scripts/plot_results.py --input results/RSIStrategy/full_dataset_backtest.json --show
+# Create plot and specify output folder
+python scripts/plot_results.py --input results/RSIStrategy/full_dataset_backtest.json --output my_custom_plot.png
+
+# Batch plot into evaluate folders
+python scripts/plot_results.py --batch
+# Batch plot into output folder
+python scripts/plot_results.py --batch --output-root results/images
+
+
+
+
+# Compare all strategies following optimisation
+#----------------------------------------------
+./compare_all_strategy_performance_metrics.sh OR
+python scripts/compare_strategies.py
+
+# Sort by return percentage
+./compare_all_strategy_performance_metrics.sh --sort return
+python scripts/compare_strategies.py --sort return
+
+
+# Sort by drawdown (lowest first)
+./compare_all_strategy_performance_metrics.sh --sort drawdown
+
+# Sort by number of trades
+./compare_all_strategy_performance_metrics.sh --sort trades
+
+# Sort by win rate
+./compare_all_strategy_performance_metrics.sh --sort winrate
+
+# Only show strategies with at least 50 trades
+./compare_all_strategy_performance_metrics.sh --min-trades 50
+
+# Only show strategies with at least 100 trades, sorted by return
+./compare_all_strategy_performance_metrics.sh --min-trades 100 --sort return
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+I want you to come up with 5 trading strategies and create the classes and configs for them. This can be anything from complex, utilising any indicator to very simple. Go wild and do your best.
+
+Now typically I would run something like this:
+
+python scripts/optimize_strategy.py \         
+    --strategy_config functions/configs/example_strategy.yaml \
+    --main_config configs/main_config.yaml \
+    --method grid \
+    --n_random 20 \
+    --n_jobs 4
+
+to optimize a strategy, however, I want you to also create me a .sh script that will execute optimisations for each of the strategies in the 

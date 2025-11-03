@@ -1,0 +1,14 @@
+strategy:
+  class: "StochasticOscillator"
+  module: "functions.strategies.stochastic_oscillator"
+  results_dir: "StochasticOscillator"
+
+name: "Stochastic Oscillator Strategy"
+
+parameters:
+  stoch_k_period: [10, 14, 18, 21]         # %K calculation period
+  stoch_d_period: [3, 5, 7]                # %D (signal) period
+  oversold: [15, 20, 25]                   # Oversold threshold
+  overbought: [75, 80, 85]                 # Overbought threshold
+  take_profit_pips: [15, 20, 30, 40, 50]   # Take profit levels
+  stop_loss_pips: [10, 15, 20, 25, 30]     # Stop loss levels

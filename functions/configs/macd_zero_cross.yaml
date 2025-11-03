@@ -1,0 +1,13 @@
+strategy:
+  class: "MACDZeroCross"
+  module: "functions.strategies.macd_zero_cross"
+  results_dir: "MACDZeroCross"
+
+name: "MACD Zero Cross"
+
+parameters:
+  fast_period: [8, 12]
+  slow_period: [20, 26, 30]
+  signal_period: [9]
+  take_profit_pips: [15, 20, 30, 40]
+  stop_loss_pips: [10, 15, 20, 30]
