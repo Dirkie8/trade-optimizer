@@ -1,0 +1,55 @@
+strategy:
+  class: StochRSIStrategy
+  module: functions.strategies.stoch_rsi_signal
+  results_dir: stoch_rsi_strategy
+name: StochRSI Strategy
+parameters:
+  rsi_period:
+  - 10
+  - 14
+  stoch_k:
+  - 14
+  - 21
+  stoch_d:
+  - 3
+  - 5
+  oversold:
+  - 10
+  - 20
+  - 30
+  overbought:
+  - 70
+  - 80
+  - 90
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  rsi_period:
+  - 8
+  - 28
+  stoch_k:
+  - 10
+  - 30
+  stoch_d:
+  - 2
+  - 10
+  oversold:
+  - 5
+  - 40
+  overbought:
+  - 60
+  - 95
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

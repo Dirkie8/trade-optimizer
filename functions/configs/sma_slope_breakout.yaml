@@ -1,0 +1,37 @@
+strategy:
+  class: SMASlopeBreakout
+  module: functions.strategies.sma_slope_breakout
+  results_dir: sma_slope_breakout
+name: SMA Slope Breakout
+parameters:
+  sma_period:
+  - 30
+  - 50
+  - 100
+  lookback:
+  - 15
+  - 20
+  - 30
+  take_profit_pips:
+  - 20
+  - 30
+  - 40
+  - 60
+  stop_loss_pips:
+  - 15
+  - 20
+  - 25
+  - 30
+parameters_bayesian:
+  sma_period:
+  - 20
+  - 200
+  lookback:
+  - 10
+  - 60
+  take_profit_pips:
+  - 15
+  - 80
+  stop_loss_pips:
+  - 10
+  - 40

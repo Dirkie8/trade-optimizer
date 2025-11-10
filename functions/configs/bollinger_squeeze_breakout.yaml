@@ -1,0 +1,44 @@
+strategy:
+  class: BollingerSqueezeBreakout
+  module: functions.strategies.bollinger_squeeze_breakout
+  results_dir: bollinger_squeeze_breakout
+name: Bollinger Squeeze Breakout
+parameters:
+  bb_period:
+  - 14
+  - 20
+  - 28
+  bb_std:
+  - 1.5
+  - 2.0
+  - 2.5
+  width_threshold:
+  - 0.006
+  - 0.01
+  - 0.015
+  take_profit_pips:
+  - 20
+  - 30
+  - 40
+  - 60
+  stop_loss_pips:
+  - 15
+  - 20
+  - 25
+  - 30
+parameters_bayesian:
+  bb_period:
+  - 10
+  - 40
+  bb_std:
+  - 1.2
+  - 3.0
+  width_threshold:
+  - 0.003
+  - 0.02
+  take_profit_pips:
+  - 15
+  - 80
+  stop_loss_pips:
+  - 10
+  - 40

@@ -1,0 +1,30 @@
+strategy:
+  class: DonchianPullback
+  module: functions.strategies.donchian_pullback
+  results_dir: donchian_pullback
+name: Donchian Pullback Strategy
+parameters:
+  channel_period:
+  - 20
+  - 30
+  - 40
+  take_profit_pips:
+  - 20
+  - 30
+  - 40
+  - 60
+  stop_loss_pips:
+  - 15
+  - 20
+  - 25
+  - 30
+parameters_bayesian:
+  channel_period:
+  - 10
+  - 60
+  take_profit_pips:
+  - 15
+  - 80
+  stop_loss_pips:
+  - 10
+  - 40

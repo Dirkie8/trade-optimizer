@@ -1,0 +1,37 @@
+strategy:
+  class: OBVTrend
+  module: functions.strategies.obv_trend
+  results_dir: obv_trend
+name: OBV Trend Strategy
+parameters:
+  fast_period:
+  - 8
+  - 10
+  - 12
+  slow_period:
+  - 20
+  - 30
+  - 40
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  fast_period:
+  - 5
+  - 25
+  slow_period:
+  - 15
+  - 80
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

@@ -2,13 +2,44 @@
 #-----------------
 #-----------------
 
+# NEW: Bayesian optimization (Recommended!)
+#------------------------------------------
+# Uses Optuna TPE sampler with custom reward metric
+# Automatically holds out 20% for validation
+# See BAYESIAN_OPTIMIZATION.md for full documentation
+
+# Single strategy:
+python scripts/optimize_bayesian.py \
+  --strategy_config functions/configs/rsi_strategy.yaml \
+  --main_config configs/main_config.yaml \
+  --n_trials 100 \
+  --n_jobs 4
+
+# With more trials for complex strategies:
+python scripts/optimize_bayesian.py \
+  --strategy_config functions/configs/multi_indicator_confluence.yaml \
+  --main_config configs/main_config.yaml \
+  --n_trials 300 \
+  --n_jobs 8
+
+# BATCH: Optimize all strategies at once
+./optimize_bayesian_batch.sh --n_trials 100 --n_jobs 4
+
+# Quick batch test (50 trials, single core)
+./optimize_bayesian_batch.sh --n_trials 50 --n_jobs 1
+
+# Full batch optimization (500 trials, 8 cores)
+./optimize_bayesian_batch.sh --n_trials 500 --n_jobs 8
+
+OR
+
 # Normal run:
 python scripts/optimize_strategy.py \         
-    --strategy_config functions/configs/example_strategy.yaml \
-    --main_config configs/main_config.yaml \
-    --method grid \                   # Grid testes ALL combinations, random selects n random combinations
-    --n_random 20 \
-    --n_jobs 4
+--strategy_config functions/configs/atr_channel_breakout.yaml \
+--main_config configs/main_config.yaml \
+--method grid \
+--n_random 200 \
+--n_jobs 4
 
 python scripts/evaluate_strategy.py \       
     --strategy_config functions/configs/stochastic_oscillator.yaml \
@@ -70,6 +101,13 @@ python scripts/hybrid_optimize.py \
   --n_jobs 1
 
 &&&&&& Batch with logs
+./optimize_hybrid_batch.sh \
+--random_samples 500 \
+--tpe_trials 50 \
+--walk-forward \
+--n-folds 4 \
+--n_jobs 4
+
 mkdir -p logs
 ts=$(date "+%Y-%m-%d_%H-%M-%S")
 ./optimize_hybrid_batch.sh \
@@ -128,7 +166,7 @@ Total: 200 + 50 = 250 backtests
 # Run best parameters over full dataset/ evaluate best params
 #------------------------------------------------------------
 scripts/evaluate_strategy.py \
-  --strategy_config functions/configs/rsi_strategy.yaml \
+  --strategy_config functions/configs/adx_trend.yaml \
   --main_config configs/main_config.yaml
 
 # Run backtest on 100% of data with best StochasticOscillator parameters
@@ -206,3 +244,35 @@ python scripts/optimize_strategy.py \
     --n_jobs 4
 
 to optimize a strategy, however, I want you to also create me a .sh script that will execute optimisations for each of the strategies in the 
+
+
+Execution realism and risk controls (optional)
+----------------------------------------------
+You can enable a few optional controls in `configs/main_config.yaml` under the `account` block
+to make backtests more realistic and to prevent the account from “drying up”. All are optional
+and default to off if omitted.
+
+Keys:
+- max_drawdown_stop_pct: Stop trading once peak-to-trough drawdown exceeds this percent.
+- min_stop_pips: Skip trades whose stop-loss distance is tighter than this (in pips).
+- slippage_pips: Apply additional unfavorable slippage at entry and exit (in pips) on top of spread.
+- min_size: Skip trades whose calculated size is below this threshold (prevents micro-trades).
+- leverage: Cap position size by margin: notional <= equity * leverage.
+
+Example account block with conservative settings:
+
+  account:
+    starting_balance: 100
+    risk_per_trade: 0.01
+    spread_pips: 0.2
+    commission_per_trade: 0.0
+    leverage: 100
+    max_drawdown_stop_pct: 30     # stop trading after 30% drawdown
+    min_stop_pips: 3              # ignore SLs tighter than 3 pips
+    slippage_pips: 0.1            # add 0.1 pips slippage per fill
+    min_size: 0.0001              # ignore trades smaller than this size
+
+Notes:
+- Spread is modeled as half at entry and half at exit (unfavorable), in addition to slippage if set.
+- These settings are optional. If omitted or set to 0, default behavior is unchanged.
+- The walk-forward optimizer’s validation split is controlled by its CLI flag `--validation_ratio` (batch runner passes it through).

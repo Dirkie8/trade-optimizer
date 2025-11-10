@@ -89,9 +89,9 @@ def main():
         # Discover all evaluation JSONs
         eval_files = []
         for root, dirs, files in os.walk("results"):
-            if os.path.basename(root) == "evaluations":
+            if os.path.basename(root) == "evaluations" or os.path.basename(root) == "optimizations":
                 for fn in files:
-                    if fn in ("full_dataset_backtest.json", "eval_results.json"):
+                    if fn in ("full_dataset_backtest.json", "eval_results.json") or "validation.json" in fn:
                         eval_files.append(os.path.join(root, fn))
         eval_files.sort()
         if not eval_files:

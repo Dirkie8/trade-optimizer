@@ -1,0 +1,30 @@
+strategy:
+  class: DICross
+  module: functions.strategies.di_cross
+  results_dir: di_cross
+name: Directional Movement Cross
+parameters:
+  di_period:
+  - 10
+  - 14
+  - 20
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  di_period:
+  - 8
+  - 30
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

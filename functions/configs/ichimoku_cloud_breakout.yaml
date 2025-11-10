@@ -1,0 +1,45 @@
+strategy:
+  class: IchimokuCloudBreakout
+  module: functions.strategies.ichimoku_cloud_breakout
+  results_dir: ichimoku_cloud_breakout
+name: Ichimoku Cloud Breakout
+parameters:
+  tenkan:
+  - 7
+  - 9
+  - 12
+  kijun:
+  - 26
+  - 30
+  senkou_b:
+  - 52
+  - 60
+  require_tk_confirm:
+  - true
+  - false
+  take_profit_pips:
+  - 20
+  - 30
+  - 40
+  - 60
+  stop_loss_pips:
+  - 15
+  - 20
+  - 25
+  - 30
+parameters_bayesian:
+  tenkan:
+  - 5
+  - 15
+  kijun:
+  - 20
+  - 40
+  senkou_b:
+  - 40
+  - 70
+  take_profit_pips:
+  - 15
+  - 80
+  stop_loss_pips:
+  - 10
+  - 40

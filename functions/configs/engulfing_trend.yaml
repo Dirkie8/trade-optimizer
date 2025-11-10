@@ -1,0 +1,30 @@
+strategy:
+  class: EngulfingTrend
+  module: functions.strategies.engulfing_trend
+  results_dir: engulfing_trend
+name: Engulfing + EMA Trend
+parameters:
+  ema_period:
+  - 30
+  - 50
+  - 100
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  ema_period:
+  - 20
+  - 200
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

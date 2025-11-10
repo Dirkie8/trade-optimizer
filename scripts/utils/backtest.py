@@ -52,11 +52,19 @@ def backtest_strategy(
     risk_frac = float(account_cfg.get("risk_per_trade", 0.01))
     spread_pips = float(account_cfg.get("spread_pips", 0.0))
     commission = float(account_cfg.get("commission_per_trade", 0.0))
+    leverage = float(account_cfg.get("leverage", 0.0))
+    # Optional realism/risk controls (all optional)
+    slippage_pips = float(account_cfg.get("slippage_pips", 0.0))  # unfavorable slip per fill
+    min_stop_pips = float(account_cfg.get("min_stop_pips", 0.0))  # skip trades with too-tight SL
+    min_size = float(account_cfg.get("min_size", 0.0))            # skip trades smaller than this size
+    max_drawdown_stop_pct = float(account_cfg.get("max_drawdown_stop_pct", 0.0))  # pause trading if exceeded
 
     spread_price = pips_to_price(spread_pips, symbol)
+    slippage_price = pips_to_price(slippage_pips, symbol)
     pip = pip_size(symbol)
 
     equity = starting_balance
+    peak_equity = starting_balance
     equity_curve: List[Dict[str, float]] = []
     open_trade: Optional[Trade] = None
     trades: List[Trade] = []
@@ -84,6 +92,15 @@ def backtest_strategy(
         # Update equity curve at current bar close
         equity_curve.append({"time": now.isoformat(), "equity": equity})
 
+        # Drawdown-based stop: stop trading once drawdown exceeds threshold
+        if max_drawdown_stop_pct and peak_equity > 0:
+            peak_equity = max(peak_equity, equity)
+            dd_frac = (peak_equity - equity) / peak_equity if peak_equity > 0 else 0.0
+            if dd_frac * 100.0 >= max_drawdown_stop_pct:
+                # Append final point and exit early
+                # Next append for last bar happens after loop; we exit now to stop further trades
+                break
+
         # If trade is open, check if SL/TP hit within next bar
         if open_trade is not None:
             # Next bar's OHLC
@@ -96,14 +113,14 @@ def backtest_strategy(
             if open_trade.direction == "BUY":
                 # SL first
                 if l <= open_trade.stop_price:
-                    exit_price = open_trade.stop_price - spread_price * 0.5
+                    exit_price = open_trade.stop_price - spread_price * 0.5 - slippage_price
                 elif h >= open_trade.take_profit_price:
-                    exit_price = open_trade.take_profit_price - spread_price * 0.5
+                    exit_price = open_trade.take_profit_price - spread_price * 0.5 - slippage_price
             else:  # SELL
                 if h >= open_trade.stop_price:
-                    exit_price = open_trade.stop_price + spread_price * 0.5
+                    exit_price = open_trade.stop_price + spread_price * 0.5 + slippage_price
                 elif l <= open_trade.take_profit_price:
-                    exit_price = open_trade.take_profit_price + spread_price * 0.5
+                    exit_price = open_trade.take_profit_price + spread_price * 0.5 + slippage_price
 
             if exit_price is not None:
                 # Close at decided price
@@ -122,13 +139,16 @@ def backtest_strategy(
             strat = strategy_cls(window, params)
             action, sl_pips, tp_pips = strat.generate_signals()
             if action in ("BUY", "SELL") and sl_pips and tp_pips:
+                # Enforce minimum stop distance if configured
+                if min_stop_pips and sl_pips < min_stop_pips:
+                    continue
                 entry_price = float(df.iloc[i + 1]["Open"])
                 if action == "BUY":
-                    entry_price += spread_price * 0.5
+                    entry_price += spread_price * 0.5 + slippage_price
                     stop_price = entry_price - pips_to_price(sl_pips, symbol)
                     take_profit_price = entry_price + pips_to_price(tp_pips, symbol)
                 else:  # SELL
-                    entry_price -= spread_price * 0.5
+                    entry_price -= spread_price * 0.5 - slippage_price
                     stop_price = entry_price + pips_to_price(sl_pips, symbol)
                     take_profit_price = entry_price - pips_to_price(tp_pips, symbol)
 
@@ -137,6 +157,15 @@ def backtest_strategy(
                     continue
                 risk_amount = equity * risk_frac
                 size = max(risk_amount / stop_dist, 0.0)
+                # Respect leverage/margin if provided (cap notional exposure)
+                if leverage and leverage > 0 and entry_price > 0:
+                    allowable_size = (equity * leverage) / entry_price
+                    if allowable_size <= 0:
+                        continue
+                    size = min(size, allowable_size)
+                # Skip trades that are too small to be meaningful
+                if min_size and size < min_size:
+                    continue
                 open_trade = Trade(
                     direction=action,
                     entry_time=nxt,

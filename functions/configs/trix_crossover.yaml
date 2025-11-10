@@ -1,0 +1,37 @@
+strategy:
+  class: TRIXCrossover
+  module: functions.strategies.trix_crossover
+  results_dir: trix_crossover
+name: TRIX Crossover Strategy
+parameters:
+  trix_period:
+  - 12
+  - 15
+  - 18
+  signal_period:
+  - 6
+  - 9
+  - 12
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  trix_period:
+  - 8
+  - 30
+  signal_period:
+  - 4
+  - 20
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

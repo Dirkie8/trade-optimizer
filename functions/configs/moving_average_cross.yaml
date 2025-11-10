@@ -1,12 +1,42 @@
 strategy:
-  class: "MovingAverageCross"
-  module: "functions.strategies.moving_average_cross"
-  results_dir: "MovingAverageCross"
-
-name: "Moving Average Cross Strategy"
-
+  class: MovingAverageCross
+  module: functions.strategies.moving_average_cross
+  results_dir: moving_average_cross
+name: Moving Average Cross Strategy
 parameters:
-  short_ma_period: [5, 8, 10, 12, 14]
-  long_ma_period: [20, 26, 30, 40, 50, 80]
-  take_profit_pips: [15, 20, 30, 40]
-  stop_loss_pips: [10, 15, 20, 30]
+  short_ma_period:
+  - 5
+  - 8
+  - 10
+  - 12
+  - 14
+  long_ma_period:
+  - 20
+  - 26
+  - 30
+  - 40
+  - 50
+  - 80
+  take_profit_pips:
+  - 15
+  - 20
+  - 30
+  - 40
+  stop_loss_pips:
+  - 10
+  - 15
+  - 20
+  - 30
+parameters_bayesian:
+  short_ma_period:
+  - 5
+  - 20
+  long_ma_period:
+  - 20
+  - 100
+  take_profit_pips:
+  - 15
+  - 50
+  stop_loss_pips:
+  - 10
+  - 35

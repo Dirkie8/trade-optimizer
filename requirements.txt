@@ -5,3 +5,4 @@ pyyaml>=6.0
 torch>=2.0; platform_system != 'Darwin' or platform_machine != 'arm64'
 tqdm>=4.66
 optuna>=3.0  # Gradient-based hyperparameter optimization
+MetaTrader5

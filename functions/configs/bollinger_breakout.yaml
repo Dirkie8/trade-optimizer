@@ -1,12 +1,41 @@
 strategy:
-  class: "BollingerBreakout"
-  module: "functions.strategies.bollinger_breakout"
-  results_dir: "BollingerBreakout"
-
-name: "Bollinger Band Breakout Strategy"
-
+  class: BollingerBreakout
+  module: functions.strategies.bollinger_breakout
+  results_dir: bollinger_breakout
+name: Bollinger Band Breakout Strategy
 parameters:
-  bb_period: [15, 20, 25, 30]              # Moving average period
-  bb_std_dev: [1.5, 2.0, 2.5, 3.0]         # Standard deviation multiplier
-  take_profit_pips: [15, 20, 30, 40, 50]   # Take profit levels
-  stop_loss_pips: [10, 15, 20, 25, 30]     # Stop loss levels
+  bb_period:
+  - 15
+  - 20
+  - 25
+  - 30
+  bb_std_dev:
+  - 1.5
+  - 2.0
+  - 2.5
+  - 3.0
+  take_profit_pips:
+  - 15
+  - 20
+  - 30
+  - 40
+  - 50
+  stop_loss_pips:
+  - 10
+  - 15
+  - 20
+  - 25
+  - 30
+parameters_bayesian:
+  bb_period:
+  - 15
+  - 30
+  bb_std_dev:
+  - 15
+  - 30
+  take_profit_pips:
+  - 15
+  - 50
+  stop_loss_pips:
+  - 10
+  - 30

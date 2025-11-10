@@ -1,0 +1,38 @@
+strategy:
+  class: HullMACrossover
+  module: functions.strategies.hull_ma_crossover
+  results_dir: hull_ma_crossover
+name: Hull MA Crossover Strategy
+parameters:
+  fast_period:
+  - 8
+  - 12
+  - 16
+  slow_period:
+  - 28
+  - 36
+  - 48
+  - 60
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  fast_period:
+  - 5
+  - 25
+  slow_period:
+  - 20
+  - 80
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 10
+  - 40

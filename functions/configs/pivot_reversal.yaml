@@ -1,0 +1,23 @@
+strategy:
+  class: PivotReversal
+  module: functions.strategies.pivot_reversal
+  results_dir: pivot_reversal
+name: Pivot Reversal Strategy
+parameters:
+  take_profit_pips:
+  - 20
+  - 30
+  - 40
+  - 60
+  stop_loss_pips:
+  - 15
+  - 20
+  - 25
+  - 30
+parameters_bayesian:
+  take_profit_pips:
+  - 15
+  - 80
+  stop_loss_pips:
+  - 10
+  - 40

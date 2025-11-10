@@ -1,0 +1,39 @@
+strategy:
+  class: AroonTrend
+  module: functions.strategies.aroon_trend
+  results_dir: aroon_trend
+name: Aroon Trend Strategy
+parameters:
+  aroon_period:
+  - 14
+  - 20
+  - 25
+  - 30
+  aroon_threshold:
+  - 55
+  - 60
+  - 65
+  - 70
+  take_profit_pips:
+  - 20
+  - 30
+  - 40
+  - 60
+  stop_loss_pips:
+  - 15
+  - 20
+  - 25
+  - 30
+parameters_bayesian:
+  aroon_period:
+  - 10
+  - 40
+  aroon_threshold:
+  - 50
+  - 80
+  take_profit_pips:
+  - 15
+  - 80
+  stop_loss_pips:
+  - 10
+  - 40

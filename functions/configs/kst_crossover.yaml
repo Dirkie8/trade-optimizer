@@ -1,0 +1,78 @@
+strategy:
+  class: KSTCrossover
+  module: functions.strategies.kst_crossover
+  results_dir: kst_crossover
+name: KST Crossover Strategy
+parameters:
+  n1:
+  - 10
+  - 12
+  s1:
+  - 8
+  - 10
+  n2:
+  - 15
+  - 18
+  s2:
+  - 8
+  - 10
+  n3:
+  - 20
+  - 25
+  s3:
+  - 8
+  - 10
+  n4:
+  - 30
+  - 35
+  s4:
+  - 10
+  - 12
+  signal_period:
+  - 7
+  - 9
+  - 12
+  take_profit_pips:
+  - 20
+  - 30
+  - 40
+  - 60
+  stop_loss_pips:
+  - 15
+  - 20
+  - 25
+  - 30
+parameters_bayesian:
+  n1:
+  - 8
+  - 20
+  s1:
+  - 5
+  - 15
+  n2:
+  - 12
+  - 30
+  s2:
+  - 5
+  - 15
+  n3:
+  - 15
+  - 40
+  s3:
+  - 5
+  - 15
+  n4:
+  - 20
+  - 60
+  s4:
+  - 5
+  - 20
+  signal_period:
+  - 4
+  - 20
+  take_profit_pips:
+  - 15
+  - 80
+  stop_loss_pips:
+  - 10
+  - 40

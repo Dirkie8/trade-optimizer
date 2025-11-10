@@ -1,0 +1,44 @@
+strategy:
+  class: MFIMeanReversion
+  module: functions.strategies.mfi_mean_reversion
+  results_dir: mfi_mean_reversion
+name: MFI Mean Reversion
+parameters:
+  mfi_period:
+  - 10
+  - 14
+  - 20
+  oversold:
+  - 15
+  - 20
+  - 25
+  overbought:
+  - 75
+  - 80
+  - 85
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 10
+  - 15
+  - 20
+  - 25
+parameters_bayesian:
+  mfi_period:
+  - 8
+  - 30
+  oversold:
+  - 10
+  - 35
+  overbought:
+  - 65
+  - 95
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

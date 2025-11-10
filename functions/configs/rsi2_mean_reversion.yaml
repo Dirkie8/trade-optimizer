@@ -1,0 +1,42 @@
+strategy:
+  class: RSI2MeanReversion
+  module: functions.strategies.rsi2_mean_reversion
+  results_dir: rsi2_mean_reversion
+name: RSI(2) Mean Reversion
+parameters:
+  rsi_period:
+  - 2
+  oversold:
+  - 5
+  - 10
+  - 15
+  overbought:
+  - 85
+  - 90
+  - 95
+  take_profit_pips:
+  - 10
+  - 20
+  - 30
+  - 40
+  stop_loss_pips:
+  - 8
+  - 12
+  - 16
+  - 20
+parameters_bayesian:
+  rsi_period:
+  - 2
+  - 5
+  oversold:
+  - 2
+  - 25
+  overbought:
+  - 75
+  - 98
+  take_profit_pips:
+  - 8
+  - 60
+  stop_loss_pips:
+  - 6
+  - 35

@@ -1,12 +1,37 @@
 strategy:
-  class: "ZScoreMeanReversion"
-  module: "functions.strategies.zscore_mean_reversion"
-  results_dir: "ZScoreMeanReversion"
-
-name: "Z-Score Mean Reversion"
-
+  class: ZScoreMeanReversion
+  module: functions.strategies.zscore_mean_reversion
+  results_dir: z_score_mean_reversion
+name: Z-Score Mean Reversion
 parameters:
-  lookback: [20, 30, 50]
-  z_threshold: [1.0, 1.5, 2.0]
-  take_profit_pips: [10, 15, 20, 30]
-  stop_loss_pips: [10, 15, 20, 30]
+  lookback:
+  - 20
+  - 30
+  - 50
+  z_threshold:
+  - 1.0
+  - 1.5
+  - 2.0
+  take_profit_pips:
+  - 10
+  - 15
+  - 20
+  - 30
+  stop_loss_pips:
+  - 10
+  - 15
+  - 20
+  - 30
+parameters_bayesian:
+  lookback:
+  - 15
+  - 80
+  z_threshold:
+  - 8
+  - 30
+  take_profit_pips:
+  - 10
+  - 40
+  stop_loss_pips:
+  - 8
+  - 35

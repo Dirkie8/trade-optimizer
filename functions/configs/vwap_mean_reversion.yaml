@@ -1,0 +1,37 @@
+strategy:
+  class: VWAPMeanReversion
+  module: functions.strategies.vwap_mean_reversion
+  results_dir: vwap_mean_reversion
+name: VWAP Mean Reversion
+parameters:
+  vwap_period:
+  - 30
+  - 50
+  - 80
+  band:
+  - 0.001
+  - 0.0015
+  - 0.0025
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  vwap_period:
+  - 20
+  - 120
+  band:
+  - 0.0005
+  - 0.004
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

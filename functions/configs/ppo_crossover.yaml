@@ -1,0 +1,45 @@
+strategy:
+  class: PPOCrossover
+  module: functions.strategies.ppo_crossover
+  results_dir: ppo_crossover
+name: PPO Crossover Strategy
+parameters:
+  fast_period:
+  - 8
+  - 12
+  - 16
+  slow_period:
+  - 20
+  - 26
+  - 30
+  - 40
+  signal_period:
+  - 6
+  - 9
+  - 12
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  fast_period:
+  - 5
+  - 25
+  slow_period:
+  - 15
+  - 60
+  signal_period:
+  - 4
+  - 20
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

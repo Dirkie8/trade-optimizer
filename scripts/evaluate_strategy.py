@@ -23,11 +23,40 @@ import importlib
 
 
 def select_params(strategy_conf: Dict[str, Any], default_opt_dir: str, optimization_csv: str | None, selection_metric: str) -> Dict[str, Any]:
-    # Prefer an explicit best.json under optimizations
+    # Priority order:
+    # 1. Bayesian optimization best params (newest method)
+    # 2. Standard optimization best params
+    # 3. Explicit CSV path provided
+    # 4. Default optimization CSV
+    # 5. YAML defaults
+    
+    # Check for Bayesian optimization results first (newest/recommended method)
+    # Prefer walk-forward (WF) results if available
+    wf_best_json = os.path.join(default_opt_dir, "bayesian_wf_optimization_results_best.json")
+    if os.path.exists(wf_best_json):
+        try:
+            with open(wf_best_json, "r") as f:
+                print(f"Using WF Bayesian optimization parameters from: {wf_best_json}")
+                return json.load(f)["params"]
+        except Exception as e:
+            print(f"Warning: Failed to load WF Bayesian params: {e}")
+            pass
+    bayesian_best_json = os.path.join(default_opt_dir, "bayesian_optimization_results_best.json")
+    if os.path.exists(bayesian_best_json):
+        try:
+            with open(bayesian_best_json, "r") as f:
+                print(f"Using Bayesian optimization parameters from: {bayesian_best_json}")
+                return json.load(f)["params"]
+        except Exception as e:
+            print(f"Warning: Failed to load Bayesian params: {e}")
+            pass
+    
+    # Then check for standard optimization results
     best_json_default = os.path.join(default_opt_dir, "optimization_results_best.json")
     if os.path.exists(best_json_default):
         try:
             with open(best_json_default, "r") as f:
+                print(f"Using optimization parameters from: {best_json_default}")
                 return json.load(f)["params"]
         except Exception:
             pass
@@ -78,6 +107,7 @@ def main():
     parser.add_argument("--optimization_csv", help="Path to optimization CSV to auto-select best params")
     parser.add_argument("--selection_metric", default="sharpe", help="Metric to select best from CSV")
     parser.add_argument("--output", default=None, help="Optional explicit output JSON path")
+    parser.add_argument("--results_root", default="results", help="Root directory to read optimization artifacts from (default: results)")
     args = parser.parse_args()
 
     with open(args.strategy_config, "r") as f:
@@ -100,8 +130,53 @@ def main():
     strategy_name = strat_conf.get("name", strategy_class_name)
 
     data = load_data(symbol, timeframe)
-    default_opt_dir = os.path.join("results", results_dir, "optimizations")
+    # Allow selecting a specific results root (e.g., results_2025-11-07)
+    results_root = args.results_root
+    default_opt_dir = os.path.join(results_root, results_dir, "optimizations")
+    
+    # Fallback to case-insensitive/snake_case variant if exact match not found
+    if not os.path.isdir(default_opt_dir):
+        # Try snake_case conversion
+        import re
+        def to_snake(name: str) -> str:
+            name = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', name)
+            name = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name)
+            return name.replace('__', '_').lower()
+        snake_dir = os.path.join(results_root, to_snake(results_dir), "optimizations")
+        if os.path.isdir(snake_dir):
+            default_opt_dir = snake_dir
+            results_dir = to_snake(results_dir)  # Update results_dir for later eval path
+        else:
+            # Final fallback to legacy "results" root
+            legacy_dir = os.path.join("results", results_dir, "optimizations")
+            if os.path.isdir(legacy_dir):
+                default_opt_dir = legacy_dir
+            else:
+                # Try snake_case in legacy too
+                legacy_snake = os.path.join("results", to_snake(results_dir), "optimizations")
+                if os.path.isdir(legacy_snake):
+                    default_opt_dir = legacy_snake
+                    results_dir = to_snake(results_dir)
+    
     params = select_params(strat_conf, default_opt_dir, args.optimization_csv, args.selection_metric)
+
+    # Print detailed info
+    print(f"\n{'='*80}")
+    print(f"BACKTEST CONFIGURATION: {strategy_name}")
+    print(f"{'='*80}")
+    print(f"\nData:")
+    print(f"  Symbol: {symbol}")
+    print(f"  Timeframe: {timeframe}")
+    print(f"  Data points: {len(data)}")
+    print(f"  Date range: {data.index[0]} to {data.index[-1]}")
+    print(f"\nParameters (from {default_opt_dir}):")
+    for k, v in params.items():
+        print(f"  {k}: {v}")
+    print(f"\nAccount Settings:")
+    for k, v in main_conf["account"].items():
+        print(f"  {k}: {v}")
+    print(f"\nMax lookback/warmup: {infer_max_lookback(strategy_name, params)} bars")
+    print(f"{'='*80}\n")
 
     max_lb = infer_max_lookback(strategy_name, params)
     res = backtest_strategy(
@@ -111,6 +186,7 @@ def main():
         params=params,
         account_cfg=main_conf["account"],
         max_lookback=max_lb,
+        progress={"desc": f"Backtesting {strategy_name}", "position": 0, "leave": True}
     )
 
     payload = {
@@ -134,7 +210,8 @@ def main():
     if args.output:
         out_path = args.output
     else:
-        out_dir = os.path.join("results", results_dir, "evaluations")
+        # Save evaluations under the same results root used for reading params (mirror structure)
+        out_dir = os.path.join(results_root, results_dir, "evaluations")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, "full_dataset_backtest.json")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)

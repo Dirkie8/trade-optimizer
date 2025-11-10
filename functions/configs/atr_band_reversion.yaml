@@ -1,0 +1,44 @@
+strategy:
+  class: ATRBandReversion
+  module: functions.strategies.atr_band_reversion
+  results_dir: atr_band_reversion
+name: ATR Band Reversion
+parameters:
+  sma_period:
+  - 14
+  - 20
+  - 30
+  atr_period:
+  - 10
+  - 14
+  - 20
+  atr_mult:
+  - 1.0
+  - 1.5
+  - 2.0
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  sma_period:
+  - 10
+  - 60
+  atr_period:
+  - 8
+  - 40
+  atr_mult:
+  - 0.8
+  - 3.0
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

@@ -1,0 +1,39 @@
+strategy:
+  class: DEMACrossover
+  module: functions.strategies.dema_crossover
+  results_dir: dema_crossover
+name: DEMA Crossover Strategy
+parameters:
+  fast_period:
+  - 5
+  - 8
+  - 10
+  - 12
+  slow_period:
+  - 20
+  - 30
+  - 40
+  - 60
+  take_profit_pips:
+  - 10
+  - 20
+  - 30
+  - 50
+  stop_loss_pips:
+  - 10
+  - 15
+  - 20
+  - 30
+parameters_bayesian:
+  fast_period:
+  - 3
+  - 20
+  slow_period:
+  - 15
+  - 80
+  take_profit_pips:
+  - 8
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

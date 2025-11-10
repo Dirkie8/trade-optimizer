@@ -38,6 +38,9 @@ python scripts/fetch_data.py --symbol EURUSD --timeframe 1m --days 5
 # Fetch specific date range with 5m timeframe  
 python scripts/fetch_data.py --symbol EURUSD --timeframe 5m --startdate 2020-01-01 --enddate 2020-01-03
 
+# Fetch specific date range with 15m timeframe  
+python scripts/fetch_data.py --symbol EURUSD --timeframe 15m --startdate 2024-01-01 --enddate 2025-10-31
+
 # Fetch 1h data (resampled from 1m source data)
 python scripts/fetch_data.py --symbol EURUSD --timeframe 1h --startdate 2020-01-01 --enddate 2020-01-02
 ```

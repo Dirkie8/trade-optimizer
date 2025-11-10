@@ -1,0 +1,23 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "WF smoke test - RSIStrategy",
+			"type": "shell",
+			"command": "python scripts/optimize_bayesian_walkforward.py --strategy RSIStrategy --n_trials 2 --n_jobs 1 --n_folds 4 --validation_ratio 0.15 --reward balanced",
+			"group": "build"
+		},
+		{
+			"label": "WF smoke test - ADXTrend",
+			"type": "shell",
+			"command": "python scripts/optimize_bayesian_walkforward.py --strategy ADXTrend --n_trials 2 --n_jobs 1 --n_folds 4 --validation_ratio 0.15 --reward balanced",
+			"group": "build"
+		},
+		{
+			"label": "WF smoke test - AroonTrend",
+			"type": "shell",
+			"command": "python scripts/optimize_bayesian_walkforward.py --strategy AroonTrend --n_trials 2 --n_jobs 1 --n_folds 4 --validation_ratio 0.15 --reward balanced",
+			"group": "build"
+		}
+	]
+}

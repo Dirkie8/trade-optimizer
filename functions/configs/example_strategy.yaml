@@ -8,3 +8,9 @@ parameters:
   long_ma_period: [100, 125, 150]
   take_profit_pips: [20, 40, 60]
   stop_loss_pips: [15, 30, 45]
+
+parameters_bayesian:
+  short_ma_period: [5, 40]
+  long_ma_period: [80, 200]
+  take_profit_pips: [15, 70]
+  stop_loss_pips: [10, 50]

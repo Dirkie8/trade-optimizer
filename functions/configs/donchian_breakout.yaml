@@ -1,11 +1,32 @@
 strategy:
-  class: "DonchianBreakout"
-  module: "functions.strategies.donchian_breakout"
-  results_dir: "DonchianBreakout"
-
-name: "Donchian Channel Breakout"
-
+  class: DonchianBreakout
+  module: functions.strategies.donchian_breakout
+  results_dir: donchian_breakout
+name: Donchian Channel Breakout
 parameters:
-  lookback: [20, 30, 40, 55, 80]
-  take_profit_pips: [20, 30, 40, 60]
-  stop_loss_pips: [15, 20, 25, 35]
+  lookback:
+  - 20
+  - 30
+  - 40
+  - 55
+  - 80
+  take_profit_pips:
+  - 20
+  - 30
+  - 40
+  - 60
+  stop_loss_pips:
+  - 15
+  - 20
+  - 25
+  - 35
+parameters_bayesian:
+  lookback:
+  - 15
+  - 100
+  take_profit_pips:
+  - 15
+  - 70
+  stop_loss_pips:
+  - 10
+  - 40

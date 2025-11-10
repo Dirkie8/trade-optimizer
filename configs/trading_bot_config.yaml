@@ -1,0 +1,46 @@
+# Trading bot configuration
+# This file controls live trading via MetaTrader 5 using Exness.
+
+account:
+  # Note: For MT5 on macOS, running via Windows/VPS is recommended.
+  broker: exness
+  # If your MT5 terminal is already logged in, login/password may be optional here.
+  login: null
+  password: null
+  server: null
+  magic_number: 123456
+
+runtime:
+  results_root: "results"           # where to read optimized params from
+  poll_interval_seconds: 2           # main loop sleep
+  log_level: INFO
+  max_retries: 5
+  reconnect_backoff_seconds: 5
+
+risk:
+  # These mirror your backtester keys
+  risk_per_trade: 0.01               # 1% per trade
+  spread_pips: 0.2
+  commission_per_trade: 0.0
+  leverage: 100
+  slippage_pips: 0.1
+  min_stop_pips: 0
+  min_size: 0.0
+  max_drawdown_stop_pct: 0
+  daily_loss_limit_pct: 50           # optional daily loss cap
+  max_concurrent_positions: 5
+
+# Strategies to run. Use snake_case names and point to the strategy YAML to resolve module/class/results_dir.
+# Per-strategy you can override symbol/timeframe or inherit from the strategy YAML/generic defaults.
+strategies:
+  - name: aroon_trend
+    enabled: true
+    strategy_config: functions/configs/keltner_squeeze_breakout.yaml
+    symbol: frxEURUSD
+    timeframe: "15m"
+
+  # - name: bollinger_breakout
+  #   enabled: false
+  #   strategy_config: functions/configs/bollinger_breakout.yaml
+  #   symbol: frxEURUSD
+  #   timeframe: "15m"

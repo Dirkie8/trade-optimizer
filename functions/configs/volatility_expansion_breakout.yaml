@@ -1,0 +1,51 @@
+strategy:
+  class: VolatilityExpansionBreakout
+  module: functions.strategies.volatility_expansion_breakout
+  results_dir: volatility_expansion_breakout
+name: Volatility Expansion Breakout
+parameters:
+  atr_period:
+  - 10
+  - 14
+  - 20
+  atr_smooth:
+  - 15
+  - 20
+  - 30
+  expansion_k:
+  - 1.3
+  - 1.5
+  - 2.0
+  lookback:
+  - 15
+  - 20
+  - 30
+  take_profit_pips:
+  - 20
+  - 30
+  - 40
+  - 60
+  stop_loss_pips:
+  - 15
+  - 20
+  - 25
+  - 30
+parameters_bayesian:
+  atr_period:
+  - 8
+  - 30
+  atr_smooth:
+  - 10
+  - 60
+  expansion_k:
+  - 1.1
+  - 3.0
+  lookback:
+  - 10
+  - 60
+  take_profit_pips:
+  - 15
+  - 80
+  stop_loss_pips:
+  - 10
+  - 40

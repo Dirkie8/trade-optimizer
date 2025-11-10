@@ -1,0 +1,23 @@
+strategy:
+  class: InsideBarBreakout
+  module: functions.strategies.inside_bar_breakout
+  results_dir: inside_bar_breakout
+name: Inside Bar Breakout
+parameters:
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40

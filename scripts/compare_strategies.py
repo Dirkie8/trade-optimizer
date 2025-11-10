@@ -40,20 +40,24 @@ def load_all_strategy_data(results_dir="results"):
         strategy_info = {'name': strategy_name}
         
         # Load TRAINING data (optimization results - first row is best by consistency)
-        opt_csv = strategy_folder / "optimizations" / "optimization_results.csv"
+        # Check Bayesian optimization first, then standard optimization
+        opt_csv = strategy_folder / "optimizations" / "bayesian_optimization_results.csv"
+        if not opt_csv.exists():
+            opt_csv = strategy_folder / "optimizations" / "optimization_results.csv"
+        
         if opt_csv.exists():
             try:
                 df = pd.read_csv(opt_csv)
                 best_train = df.iloc[0]
                 strategy_info['train'] = {
-                    'consistency_score': best_train['consistency_score'],
-                    'sortino': best_train['sortino'],
-                    'calmar': best_train['calmar'],
-                    'sharpe': best_train['sharpe'],
+                    'consistency_score': best_train.get('consistency_score', 0),
+                    'sortino': best_train.get('sortino', 0),
+                    'calmar': best_train.get('calmar', 0),
+                    'sharpe': best_train.get('sharpe', 0),
                     'return': best_train['total_return_pct'],
                     'max_drawdown': best_train['max_drawdown_pct'],
-                    'avg_drawdown': best_train['avg_drawdown_pct'],
-                    'rolling_sharpe_consistency': best_train['rolling_sharpe_consistency'],
+                    'avg_drawdown': best_train.get('avg_drawdown_pct', 0),
+                    'rolling_sharpe_consistency': best_train.get('rolling_sharpe_consistency', 0),
                     'trades': int(best_train['trades']),
                     'win_rate': best_train['win_rate_pct']
                 }
@@ -82,7 +86,11 @@ def load_all_strategy_data(results_dir="results"):
                 print(f"Warning: Could not load test data for {strategy_name}: {e}", file=sys.stderr)
         
         # Load FULL DATASET data (complete backtest)
-        full_json = strategy_folder / "full_dataset_backtest.json"
+        # Check in evaluations folder first, then root
+        full_json = strategy_folder / "evaluations" / "full_dataset_backtest.json"
+        if not full_json.exists():
+            full_json = strategy_folder / "full_dataset_backtest.json"
+        
         if full_json.exists():
             try:
                 with open(full_json, 'r') as f:

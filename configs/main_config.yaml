@@ -4,6 +4,10 @@ account:
   spread_pips: 0.2
   commission_per_trade: 0.0
   leverage: 100
+  max_drawdown_stop_pct: 0   # stop trading after 30% drawdown
+  slippage_pips: 0.1          # 0.1 pips unfavorable slippage per fill
+  min_stop_pips: 0            # ignore SLs tighter than 3 pips
+  min_size: 0.0000            # skip trades smaller than this size
 
 broker:
   name: exness_demo
@@ -13,10 +17,7 @@ broker:
 # Data file is constructed using candle_data_list_{default_symbol}_{default_timeframe converted to seconds}s.json
 general:
   default_symbol: "frxEURUSD"
-  default_timeframe: "1h"
-  # Train/test split for optimization workflow
-  # 1.0 means optimize on full data (no evaluation phase).
-  # e.g., 0.8 = first 80% for train (optimize), last 20% for test (evaluate top-N)
-  train_ratio: 0.8
-  # Number of top parameter sets from optimization to evaluate on test split
-  evaluation_top_n: 50
+  default_timeframe: "15m"
+  # Validation ratio for Bayesian optimization (e.g., 0.2 = hold out last 20% for final validation)
+  # This is used as the default if not specified in the batch optimization script
+  validation_ratio: 0.2

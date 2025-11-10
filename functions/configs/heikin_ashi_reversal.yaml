@@ -1,0 +1,30 @@
+strategy:
+  class: HeikinAshiReversal
+  module: functions.strategies.heikin_ashi_reversal
+  results_dir: heikin_ashi_reversal
+name: Heikin Ashi Reversal
+parameters:
+  ema_filter:
+  - 30
+  - 50
+  - 100
+  take_profit_pips:
+  - 15
+  - 25
+  - 35
+  - 50
+  stop_loss_pips:
+  - 12
+  - 18
+  - 24
+  - 30
+parameters_bayesian:
+  ema_filter:
+  - 20
+  - 200
+  take_profit_pips:
+  - 10
+  - 70
+  stop_loss_pips:
+  - 8
+  - 40
