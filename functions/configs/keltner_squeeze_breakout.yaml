@@ -42,3 +42,9 @@ parameters_bayesian:
   stop_loss_pips:
   - 10
   - 40
+best_params:
+  period: 10
+  bb_std: 1
+  kc_mult: 2
+  take_profit_pips: 15
+  stop_loss_pips: 18
