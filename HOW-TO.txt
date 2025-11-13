@@ -276,3 +276,22 @@ Notes:
 - Spread is modeled as half at entry and half at exit (unfavorable), in addition to slippage if set.
 - These settings are optional. If omitted or set to 0, default behavior is unchanged.
 - The walk-forward optimizer’s validation split is controlled by its CLI flag `--validation_ratio` (batch runner passes it through).
+
+
+##### 2025-11-07 Latest flow
+##### ---------
+
+./optimize_bayesian_wf_batch.sh \
+--n_trials 200 \
+--n_jobs 6 \
+--n_folds 6 \
+--validation_ratio 0.20 \
+--reward balanced \
+--include "AroonTrend,ATRBandReversion,BollingerBreakout,BollingerSqueezeBreakout,DICross,EMACrossover,EMAPullback,FractalBreakout,HeikinAshiReversal,HeikinAshiTrend,HullMACrossover,IchimokuKijunCross,KeltnerSqueezeBreakout,KSTCrossover,MACDMomentum,PivotReversal,PPOCrossover,PriceChannelReversion,SMASlopeBreakout,StochasticOscillator,StochRSIStrategy" \
+--yes
+
+./run_full_backtest.sh --all
+
+python scripts/plot_results.py --batch --output-root results/images
+python scripts/compare_bayesian_results.py --output results/analysis_opt.md
+python scripts/compare_bayesian_results.py --subdir evaluations --output results/analysis_evals.md
