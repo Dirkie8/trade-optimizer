@@ -1,0 +1,11 @@
+*.pyc
+__pycache__/
+.env
+*.log
+.DS_Store
+results/
+cache/
+python-3.12.4/
+data/
+logs/
+results*
