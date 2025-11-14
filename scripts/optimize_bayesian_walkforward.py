@@ -332,8 +332,8 @@ def run_bayesian_optimization(
     validation_ratio: float = 0.2,
     reward_type: str = "balanced",
     seed: int = 42,
-    early_stop_patience: int = 0,
-    early_stop_min_improve: float = 0.0,
+    param_stagnation_patience: int = 0,
+    param_tolerance: float = 0.0,
 ):
     """
     Run Bayesian optimization with walk-forward validation.
@@ -405,10 +405,6 @@ def run_bayesian_optimization(
     print(f"  Parallel jobs: {n_jobs}")
     print(f"  Walk-forward folds: {n_folds}")
     print(f"  Reward type: {reward_type}")
-    if early_stop_patience > 0 and early_stop_min_improve > 0:
-        print(f"  Early stop: patience={early_stop_patience}, min_improve={early_stop_min_improve}")
-    else:
-        print("  Early stop: disabled")
     
     sampler = TPESampler(seed=seed, n_startup_trials=min(10, n_trials // 5))
     study = optuna.create_study(
@@ -419,6 +415,26 @@ def run_bayesian_optimization(
     
     # Store all trial results
     all_results = []
+    stopped_due_to_param_stagnation = False
+    previous_best_params = None
+    stagnation_counter = 0
+
+    def params_equal(p_old: Dict[str, Any], p_new: Dict[str, Any], tol: float) -> bool:
+        if p_old is None or p_new is None:
+            return False
+        if p_old.keys() != p_new.keys():
+            return False
+        for k in p_old.keys():
+            v1 = p_old[k]
+            v2 = p_new[k]
+            # Numeric tolerance for floats
+            if isinstance(v1, float) or isinstance(v2, float):
+                if abs(float(v1) - float(v2)) > tol:
+                    return False
+            else:
+                if v1 != v2:
+                    return False
+        return True
     
     def objective(trial: optuna.Trial) -> float:
         """Objective function for Optuna optimization."""
@@ -484,35 +500,36 @@ def run_bayesian_optimization(
     
     # Run optimization with progress bar
     print(f"\n{GREEN}Starting optimization...{RESET}\n")
-    early_stopped_at = None
-    best_value_at_last_improvement = -np.inf
-    last_improvement_trial = -1
-
-    def early_stop_callback(study, trial):
-        """Optuna callback to handle progress bar updates and early stopping."""
-        nonlocal early_stopped_at, best_value_at_last_improvement, last_improvement_trial
-        pbar.update(1)
-        current_best = study.best_value if study.best_trial else -np.inf
-        pbar.set_postfix({
-            'best_reward': f'{current_best:.4f}',
-            'trial': trial.number + 1
-        })
-        # Check improvement
-        if current_best - best_value_at_last_improvement >= early_stop_min_improve:
-            best_value_at_last_improvement = current_best
-            last_improvement_trial = trial.number
-        elif early_stop_patience > 0 and early_stop_min_improve > 0:
-            # No sufficient improvement this trial
-            if (trial.number - last_improvement_trial) >= early_stop_patience:
-                print(f"\n{YELLOW}Early stopping triggered at trial {trial.number + 1}: no improvement >= {early_stop_min_improve} for {early_stop_patience} trials.{RESET}")
-                early_stopped_at = trial.number + 1  # human-friendly counting
-                study.stop()
-
     with tqdm(total=n_trials, desc="Bayesian Optimization", unit="trial") as pbar:
+        def callback(study, trial):
+            pbar.update(1)
+            best_val = study.best_value if study.best_trial else -np.inf
+            pbar.set_postfix({
+                'best_reward': f'{best_val:.4f}',
+                'trial': trial.number + 1
+            })
+            # Parameter stagnation early stop (only if patience > 0)
+            if param_stagnation_patience > 0 and study.best_trial is not None:
+                nonlocal previous_best_params, stagnation_counter, stopped_due_to_param_stagnation
+                current_best = study.best_params
+                if previous_best_params is None:
+                    previous_best_params = dict(current_best)
+                    stagnation_counter = 0
+                else:
+                    if params_equal(previous_best_params, current_best, param_tolerance):
+                        stagnation_counter += 1
+                    else:
+                        previous_best_params = dict(current_best)
+                        stagnation_counter = 0
+                if stagnation_counter >= param_stagnation_patience:
+                    print(f"\n{YELLOW}Early stop: best parameters unchanged for {stagnation_counter} consecutive trials (patience={param_stagnation_patience}).{RESET}")
+                    stopped_due_to_param_stagnation = True
+                    study.stop()
+        
         study.optimize(
             objective,
             n_trials=n_trials,
-            callbacks=[early_stop_callback],
+            callbacks=[callback],
             show_progress_bar=False,
             n_jobs=n_jobs,
         )
@@ -619,14 +636,6 @@ def run_bayesian_optimization(
         'params': study.best_params,
         'train_reward': float(study.best_value),
         'validation_reward': float(reward_floored),
-        'early_stop': {
-            'enabled': bool(early_stop_patience > 0 and early_stop_min_improve > 0),
-            'patience': early_stop_patience,
-            'min_improve': early_stop_min_improve,
-            'stopped_at_trial': early_stopped_at,
-            'requested_trials': n_trials,
-            'completed_trials': len(study.trials),
-        },
         'train_metrics': {
             k: float(v) if isinstance(v, (int, float, np.number)) else v
             for k, v in all_results[-1].items()
@@ -643,6 +652,13 @@ def run_bayesian_optimization(
             'calmar': float(validation_result.get('calmar', 0)),
             'max_drawdown_pct': float(validation_result.get('max_drawdown_pct', 0)),
             'trades': int(validation_result.get('trades', 0)),
+        },
+        'early_stop': {
+            'param_stagnation_enabled': param_stagnation_patience > 0,
+            'param_stagnation_patience': param_stagnation_patience,
+            'stopped_due_to_param_stagnation': stopped_due_to_param_stagnation,
+            'param_tolerance': param_tolerance,
+            'stagnation_counter_final': stagnation_counter,
         }
     }
     
@@ -705,10 +721,8 @@ Examples:
     parser.add_argument('--reward', choices=['balanced', 'consistency', 'sharpe', 'sortino', 'calmar'],
                        default='balanced', help='Reward metric type (default: balanced)')
     parser.add_argument('--seed', type=int, default=42, help='Random seed (default: 42)')
-    parser.add_argument('--early_stop_patience', type=int, default=0,
-                        help='Early stopping patience in trials (disabled if 0).')
-    parser.add_argument('--early_stop_min_improve', type=float, default=0.0,
-                        help='Minimum improvement in reward to reset patience (disabled if <= 0).')
+    parser.add_argument('--param_stagnation_patience', type=int, default=0, help='Early stop if best params unchanged for this many consecutive trials (0 disables).')
+    parser.add_argument('--param_tolerance', type=float, default=0.0, help='Tolerance for float parameter equality when detecting stagnation (default: 0 exact match).')
     
     args = parser.parse_args()
     
@@ -770,8 +784,8 @@ Examples:
         validation_ratio=args.validation_ratio,
         reward_type=args.reward,
         seed=args.seed,
-        early_stop_patience=args.early_stop_patience,
-        early_stop_min_improve=args.early_stop_min_improve,
+        param_stagnation_patience=args.param_stagnation_patience,
+        param_tolerance=args.param_tolerance,
     )
 
 
