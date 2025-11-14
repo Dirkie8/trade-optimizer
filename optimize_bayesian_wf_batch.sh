@@ -22,9 +22,9 @@ VALIDATION_RATIO=""  # Will be read from main_config.yaml if not specified
 REWARD="balanced"
 MAIN_CONFIG="configs/main_config.yaml"
 AUTO_YES=0
-# Early stopping defaults (can be overridden)
-EARLY_STOP_PATIENCE=0
-EARLY_STOP_MIN_IMPROVE=0.0
+# Early stop on parameter stagnation (new)
+PARAM_STAGNATION_PATIENCE=0   # 0 disables
+PARAM_TOLERANCE=0.0           # float tolerance for equality
 # Optional filters (comma-separated names). Match against strategy file base (e.g., rsi_strategy)
 # Example: --include "RSIStrategy,ADXTrend" or --exclude "BollingerBreakout,MACDMomentum"
 INCLUDE_STRATS=""
@@ -44,9 +44,9 @@ OPTIONS:
     --validation_ratio R   Hold-out validation ratio 0-1 (default: 0.15 = 15%)
     --reward TYPE          Reward metric: balanced, consistency, sharpe, sortino, 
                            calmar (default: balanced)
+    --param_stagnation_patience N  Early stop if best params unchanged N consecutive trials (default: 0 disabled)
+    --param_tolerance F           Float tolerance for param equality (default: 0.0 exact)
     --main_config PATH     Path to main config (default: configs/main_config.yaml)
-    --early_stop_patience N  Stop if no improvement for N trials (default: disabled)
-    --early_stop_min_improve F  Minimum improvement to reset patience (default: 0.0)
     --include LIST         Comma-separated strategies to include (subset run)
     --exclude LIST         Comma-separated strategies to exclude
     --yes, -y              Skip interactive confirmation prompt (assume yes)
@@ -101,12 +101,12 @@ while [[ $# -gt 0 ]]; do
             REWARD="$2"
             shift 2
             ;;
-        --early_stop_patience)
-            EARLY_STOP_PATIENCE="$2"
+        --param_stagnation_patience)
+            PARAM_STAGNATION_PATIENCE="$2"
             shift 2
             ;;
-        --early_stop_min_improve)
-            EARLY_STOP_MIN_IMPROVE="$2"
+        --param_tolerance)
+            PARAM_TOLERANCE="$2"
             shift 2
             ;;
         --main_config)
@@ -264,13 +264,10 @@ echo -e "  Parallel Jobs:    ${GREEN}${N_JOBS}${NC}"
 echo -e "  WF Folds:         ${GREEN}${N_FOLDS}${NC} (on training set)"
 echo -e "  Validation:       ${GREEN}${VALIDATION_RATIO}${NC} (hold-out)"
 echo -e "  Reward Metric:    ${GREEN}${REWARD}${NC}"
-if [ "$EARLY_STOP_PATIENCE" -gt 0 ] && awk "BEGIN {exit !($EARLY_STOP_MIN_IMPROVE > 0)}"; then
-    echo -e "  Early Stop:       ${GREEN}patience=${EARLY_STOP_PATIENCE}, min_improve=${EARLY_STOP_MIN_IMPROVE}${NC}"
-else
-    echo -e "  Early Stop:       ${YELLOW}disabled${NC}"
-fi
 echo -e "  Main Config:      ${GREEN}${MAIN_CONFIG}${NC}"
 echo -e "  Strategies:       ${GREEN}${#STRATEGIES[@]}${NC}"
+echo -e "  Param Stag Pat.:  ${GREEN}${PARAM_STAGNATION_PATIENCE}${NC}" 
+echo -e "  Param Tolerance:  ${GREEN}${PARAM_TOLERANCE}${NC}" 
 echo ""
 echo -e "${CYAN}Strategies to optimize:${NC}"
 for strategy_info in "${STRATEGIES[@]}"; do
@@ -331,8 +328,8 @@ for i in "${!STRATEGIES[@]}"; do
         --n_folds "$N_FOLDS" \
         --validation_ratio "$VALIDATION_RATIO" \
         --reward "$REWARD" \
-        --early_stop_patience "$EARLY_STOP_PATIENCE" \
-        --early_stop_min_improve "$EARLY_STOP_MIN_IMPROVE"
+        --param_stagnation_patience "$PARAM_STAGNATION_PATIENCE" \
+        --param_tolerance "$PARAM_TOLERANCE"
     
     EXIT_CODE=$?
     STRATEGY_END=$(date +%s)
