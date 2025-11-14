@@ -331,7 +331,9 @@ def run_bayesian_optimization(
     n_folds: int = 5,
     validation_ratio: float = 0.2,
     reward_type: str = "balanced",
-    seed: int = 42
+    seed: int = 42,
+    early_stop_patience: int = 0,
+    early_stop_min_improve: float = 0.0,
 ):
     """
     Run Bayesian optimization with walk-forward validation.
@@ -403,6 +405,10 @@ def run_bayesian_optimization(
     print(f"  Parallel jobs: {n_jobs}")
     print(f"  Walk-forward folds: {n_folds}")
     print(f"  Reward type: {reward_type}")
+    if early_stop_patience > 0 and early_stop_min_improve > 0:
+        print(f"  Early stop: patience={early_stop_patience}, min_improve={early_stop_min_improve}")
+    else:
+        print("  Early stop: disabled")
     
     sampler = TPESampler(seed=seed, n_startup_trials=min(10, n_trials // 5))
     study = optuna.create_study(
@@ -416,13 +422,21 @@ def run_bayesian_optimization(
     
     def objective(trial: optuna.Trial) -> float:
         """Objective function for Optuna optimization."""
-        # Sample parameters
+        # Sample parameters with correct types: ints stay ints; floats explore continuous space
         params = {}
         for param_name, param_range in param_ranges.items():
             if isinstance(param_range, list) and len(param_range) == 2:
                 low, high = param_range
-                # Assume integers for trading parameters
-                params[param_name] = trial.suggest_int(param_name, int(low), int(high))
+                # Use integer sampler only when both bounds are integers
+                if isinstance(low, int) and isinstance(high, int):
+                    params[param_name] = trial.suggest_int(param_name, low, high)
+                else:
+                    # Continuous float range
+                    try:
+                        params[param_name] = trial.suggest_float(param_name, float(low), float(high))
+                    except Exception:
+                        # Fallback to categorical if sampler not available
+                        params[param_name] = trial.suggest_categorical(param_name, [float(low), float(high)])
             else:
                 print(f"  Warning: Invalid range for {param_name}: {param_range}")
                 params[param_name] = param_range
@@ -470,19 +484,35 @@ def run_bayesian_optimization(
     
     # Run optimization with progress bar
     print(f"\n{GREEN}Starting optimization...{RESET}\n")
+    early_stopped_at = None
+    best_value_at_last_improvement = -np.inf
+    last_improvement_trial = -1
+
+    def early_stop_callback(study, trial):
+        """Optuna callback to handle progress bar updates and early stopping."""
+        nonlocal early_stopped_at, best_value_at_last_improvement, last_improvement_trial
+        pbar.update(1)
+        current_best = study.best_value if study.best_trial else -np.inf
+        pbar.set_postfix({
+            'best_reward': f'{current_best:.4f}',
+            'trial': trial.number + 1
+        })
+        # Check improvement
+        if current_best - best_value_at_last_improvement >= early_stop_min_improve:
+            best_value_at_last_improvement = current_best
+            last_improvement_trial = trial.number
+        elif early_stop_patience > 0 and early_stop_min_improve > 0:
+            # No sufficient improvement this trial
+            if (trial.number - last_improvement_trial) >= early_stop_patience:
+                print(f"\n{YELLOW}Early stopping triggered at trial {trial.number + 1}: no improvement >= {early_stop_min_improve} for {early_stop_patience} trials.{RESET}")
+                early_stopped_at = trial.number + 1  # human-friendly counting
+                study.stop()
+
     with tqdm(total=n_trials, desc="Bayesian Optimization", unit="trial") as pbar:
-        def callback(study, trial):
-            pbar.update(1)
-            best_val = study.best_value if study.best_trial else -np.inf
-            pbar.set_postfix({
-                'best_reward': f'{best_val:.4f}',
-                'trial': trial.number + 1
-            })
-        
         study.optimize(
             objective,
             n_trials=n_trials,
-            callbacks=[callback],
+            callbacks=[early_stop_callback],
             show_progress_bar=False,
             n_jobs=n_jobs,
         )
@@ -589,6 +619,14 @@ def run_bayesian_optimization(
         'params': study.best_params,
         'train_reward': float(study.best_value),
         'validation_reward': float(reward_floored),
+        'early_stop': {
+            'enabled': bool(early_stop_patience > 0 and early_stop_min_improve > 0),
+            'patience': early_stop_patience,
+            'min_improve': early_stop_min_improve,
+            'stopped_at_trial': early_stopped_at,
+            'requested_trials': n_trials,
+            'completed_trials': len(study.trials),
+        },
         'train_metrics': {
             k: float(v) if isinstance(v, (int, float, np.number)) else v
             for k, v in all_results[-1].items()
@@ -667,6 +705,10 @@ Examples:
     parser.add_argument('--reward', choices=['balanced', 'consistency', 'sharpe', 'sortino', 'calmar'],
                        default='balanced', help='Reward metric type (default: balanced)')
     parser.add_argument('--seed', type=int, default=42, help='Random seed (default: 42)')
+    parser.add_argument('--early_stop_patience', type=int, default=0,
+                        help='Early stopping patience in trials (disabled if 0).')
+    parser.add_argument('--early_stop_min_improve', type=float, default=0.0,
+                        help='Minimum improvement in reward to reset patience (disabled if <= 0).')
     
     args = parser.parse_args()
     
@@ -727,7 +769,9 @@ Examples:
         n_folds=args.n_folds,
         validation_ratio=args.validation_ratio,
         reward_type=args.reward,
-        seed=args.seed
+        seed=args.seed,
+        early_stop_patience=args.early_stop_patience,
+        early_stop_min_improve=args.early_stop_min_improve,
     )
 
 

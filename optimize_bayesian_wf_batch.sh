@@ -22,6 +22,9 @@ VALIDATION_RATIO=""  # Will be read from main_config.yaml if not specified
 REWARD="balanced"
 MAIN_CONFIG="configs/main_config.yaml"
 AUTO_YES=0
+# Early stopping defaults (can be overridden)
+EARLY_STOP_PATIENCE=0
+EARLY_STOP_MIN_IMPROVE=0.0
 # Optional filters (comma-separated names). Match against strategy file base (e.g., rsi_strategy)
 # Example: --include "RSIStrategy,ADXTrend" or --exclude "BollingerBreakout,MACDMomentum"
 INCLUDE_STRATS=""
@@ -42,6 +45,8 @@ OPTIONS:
     --reward TYPE          Reward metric: balanced, consistency, sharpe, sortino, 
                            calmar (default: balanced)
     --main_config PATH     Path to main config (default: configs/main_config.yaml)
+    --early_stop_patience N  Stop if no improvement for N trials (default: disabled)
+    --early_stop_min_improve F  Minimum improvement to reset patience (default: 0.0)
     --include LIST         Comma-separated strategies to include (subset run)
     --exclude LIST         Comma-separated strategies to exclude
     --yes, -y              Skip interactive confirmation prompt (assume yes)
@@ -94,6 +99,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --reward)
             REWARD="$2"
+            shift 2
+            ;;
+        --early_stop_patience)
+            EARLY_STOP_PATIENCE="$2"
+            shift 2
+            ;;
+        --early_stop_min_improve)
+            EARLY_STOP_MIN_IMPROVE="$2"
             shift 2
             ;;
         --main_config)
@@ -251,6 +264,11 @@ echo -e "  Parallel Jobs:    ${GREEN}${N_JOBS}${NC}"
 echo -e "  WF Folds:         ${GREEN}${N_FOLDS}${NC} (on training set)"
 echo -e "  Validation:       ${GREEN}${VALIDATION_RATIO}${NC} (hold-out)"
 echo -e "  Reward Metric:    ${GREEN}${REWARD}${NC}"
+if [ "$EARLY_STOP_PATIENCE" -gt 0 ] && awk "BEGIN {exit !($EARLY_STOP_MIN_IMPROVE > 0)}"; then
+    echo -e "  Early Stop:       ${GREEN}patience=${EARLY_STOP_PATIENCE}, min_improve=${EARLY_STOP_MIN_IMPROVE}${NC}"
+else
+    echo -e "  Early Stop:       ${YELLOW}disabled${NC}"
+fi
 echo -e "  Main Config:      ${GREEN}${MAIN_CONFIG}${NC}"
 echo -e "  Strategies:       ${GREEN}${#STRATEGIES[@]}${NC}"
 echo ""
@@ -312,7 +330,9 @@ for i in "${!STRATEGIES[@]}"; do
         --n_jobs "$N_JOBS" \
         --n_folds "$N_FOLDS" \
         --validation_ratio "$VALIDATION_RATIO" \
-        --reward "$REWARD"
+        --reward "$REWARD" \
+        --early_stop_patience "$EARLY_STOP_PATIENCE" \
+        --early_stop_min_improve "$EARLY_STOP_MIN_IMPROVE"
     
     EXIT_CODE=$?
     STRATEGY_END=$(date +%s)
