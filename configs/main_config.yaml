@@ -1,13 +1,14 @@
 account:
   starting_balance: 100
-  risk_per_trade: 0.01
+  risk_per_trade: 0.03
   spread_pips: 0.2
   commission_per_trade: 0.0
   leverage: 100
   max_drawdown_stop_pct: 0   # stop trading after 30% drawdown
   slippage_pips: 0.1          # 0.1 pips unfavorable slippage per fill
   min_stop_pips: 0            # ignore SLs tighter than 3 pips
-  min_size: 0.0000            # skip trades smaller than this size
+  min_size: 0.1               # skip trades smaller than this size (enforce minimum lot 0.1)
+  lot_step: 0.1               # round position size down to nearest 0.1 lot increment
 
 broker:
   name: exness_demo
@@ -17,7 +18,7 @@ broker:
 # Data file is constructed using candle_data_list_{default_symbol}_{default_timeframe converted to seconds}s.json
 general:
   default_symbol: "frxEURUSD"
-  default_timeframe: "15m"
+  default_timeframe: "5m"
   # Validation ratio for Bayesian optimization (e.g., 0.2 = hold out last 20% for final validation)
   # This is used as the default if not specified in the batch optimization script
   validation_ratio: 0.2
