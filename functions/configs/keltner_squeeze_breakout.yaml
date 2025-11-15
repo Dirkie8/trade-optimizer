@@ -28,6 +28,23 @@ parameters:
   - 30
 parameters_bayesian:
   period:
+  - 1
+  - 8
+  bb_std:
+  - 1.1
+  - 1.4
+  kc_mult:
+  - 1.4
+  - 2.2
+  take_profit_pips:
+  - 0.15
+  - 4
+  stop_loss_pips:
+  - 0.10
+  - 3
+# Not sure if I can add comments here but let's see
+parameters_bayesian_15m:
+  period:
   - 10
   - 40
   bb_std:
@@ -42,9 +59,15 @@ parameters_bayesian:
   stop_loss_pips:
   - 10
   - 40
-best_params:
+best_params_15m:
   period: 10
   bb_std: 1
   kc_mult: 2
   take_profit_pips: 15
   stop_loss_pips: 18
+best_params:
+  period: 6
+  bb_std: 1.12051
+  kc_mult: 1.71934
+  take_profit_pips: 3.88128
+  stop_loss_pips: 0.10793
