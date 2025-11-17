@@ -16,6 +16,7 @@ runtime:
   log_level: INFO
   max_retries: 5
   reconnect_backoff_seconds: 5
+  process_on_start: false            # process signals on startup
 
 risk:
   # These mirror your backtester keys
@@ -36,7 +37,7 @@ strategies:
   - name: keltner_squeeze_breakout
     enabled: true
     strategy_config: functions/configs/keltner_squeeze_breakout.yaml
-    symbol: frxEURUSD
+    symbol: EURUSDm
     timeframe: "5m"
 
   # - name: bollinger_breakout
