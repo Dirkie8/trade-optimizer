@@ -150,6 +150,16 @@ def run_strategy_once(
     if not isinstance(params, dict) or not params:
         return {'status': 'no_params'}
 
+    # Optional: scale pips-based parameters if the strategy YAML declares a scale.
+    # This supports conventions like 0.11 meaning 11 pips when pips_param_scale=100.
+    pips_scale = float(strat_yaml.get('pips_param_scale', 1.0) or 1.0)
+    pips_keys = strat_yaml.get('pips_param_keys') or ['stop_loss_pips', 'take_profit_pips']
+    if pips_scale != 1.0:
+        params = params.copy()
+        for k in pips_keys:
+            if k in params and isinstance(params[k], (int, float)):
+                params[k] = float(params[k]) * pips_scale
+
     mod = __import__(module_path, fromlist=[strategy_class_name])
     StrategyCls = getattr(mod, strategy_class_name)
 
@@ -200,10 +210,17 @@ def run_strategy_once(
     cap_candidates = []
     if free_margin is not None:
         cap_candidates.append(theoretical_max_lots_from_free_margin(free_margin, lev, entry_price))
-    maot = risk_cfg.get('max_allowed_open_trades')
-    if maot:
+    # Use max_concurrent_positions primarily; fall back to legacy max_allowed_open_trades
+    mcp = risk_cfg.get('max_concurrent_positions')
+    maot = risk_cfg.get('max_allowed_open_trades') if not mcp else None
+    per_trade_divisor = None
+    if mcp and isinstance(mcp, (int, float)) and mcp > 0:
+        per_trade_divisor = float(mcp)
+    elif maot and isinstance(maot, (int, float)) and maot > 0:
+        per_trade_divisor = float(maot)
+    if per_trade_divisor:
         try:
-            per_trade_budget = balance / float(maot)
+            per_trade_budget = balance / per_trade_divisor
             effective_budget = min(per_trade_budget, free_margin) if free_margin is not None else per_trade_budget
             cap_candidates.append(theoretical_max_lots_from_margin_budget(effective_budget, lev, entry_price))
         except Exception:
@@ -218,10 +235,20 @@ def run_strategy_once(
     if raw_lot <= 0:
         return {'status':'invalid_lot','closed_bar_ts':closed_ts}
     lot = min(raw_lot, theoretical_cap)
-    if lot < 0.01:
-        return {'status':'lot_below_min','raw_lot':raw_lot,'cap':theoretical_cap,'closed_bar_ts':closed_ts,'entry':entry_price,'sl':sl_price,'tp':tp_price,'balance':balance,'leverage':lev,'spread':spread,'action':action}
-    lot = math.floor(lot*100)/100.0
-    if lot < 0.01:
+
+    # Apply lot sizing policies: min_size, lot_step, and optional hard max_lot_size
+    min_size = float(risk_cfg.get('min_size', 0.01) or 0.01)
+    lot_step = float(risk_cfg.get('lot_step', 0.01) or 0.01)
+    max_lot_size = float(risk_cfg.get('max_lot_size', 0.0) or 0.0)
+
+    if lot_step and lot_step > 0:
+        lot = (lot // lot_step) * lot_step
+    else:
+        # Default to 0.01 step if unspecified
+        lot = math.floor(lot*100)/100.0
+    if max_lot_size and max_lot_size > 0 and lot > max_lot_size:
+        lot = max_lot_size
+    if lot < min_size:
         return {'status':'lot_below_min','raw_lot':raw_lot,'cap':theoretical_cap,'closed_bar_ts':closed_ts,'entry':entry_price,'sl':sl_price,'tp':tp_price,'balance':balance,'leverage':lev,'spread':spread,'action':action}
 
     # Margin requirement check
