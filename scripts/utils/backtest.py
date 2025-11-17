@@ -25,6 +25,7 @@ class Trade:
     exit_time: Optional[pd.Timestamp] = None
     exit_price: Optional[float] = None
     pnl: Optional[float] = None
+    equity_after: Optional[float] = None  # equity immediately after trade closes
 
 
 def backtest_strategy(
@@ -133,6 +134,7 @@ def backtest_strategy(
                 pnl -= commission  # commission on close
                 open_trade.pnl = pnl
                 equity += pnl
+                open_trade.equity_after = equity
                 trades.append(open_trade)
                 open_trade = None
 
@@ -257,6 +259,7 @@ def trade_to_dict(t: Trade) -> Dict[str, Any]:
         "exit_price": t.exit_price,
         "size": t.size,
         "pnl": t.pnl,
+        "equity_after": t.equity_after,
     }
 
 
