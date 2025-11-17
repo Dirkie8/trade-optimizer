@@ -11,6 +11,7 @@ import json
 import os
 import sys
 from typing import Any, Dict
+import numbers
 
 import pandas as pd
 import yaml
@@ -159,6 +160,31 @@ def main():
                     results_dir = to_snake(results_dir)
     
     params = select_params(strat_conf, default_opt_dir, args.optimization_csv, args.selection_metric)
+
+    # Normalize numeric params: round floats to 2 decimals; leave ints (and bools) unchanged
+    def _round_numeric_params(p: Dict[str, Any], decimals: int = 2) -> Dict[str, Any]:
+        rounded: Dict[str, Any] = {}
+        for k, v in p.items():
+            # Important: bool is a subclass of int; keep it untouched
+            if isinstance(v, bool):
+                rounded[k] = v
+            elif isinstance(v, int):
+                rounded[k] = v
+            elif isinstance(v, numbers.Real):
+                # Force to float to handle numpy scalars as well
+                rounded[k] = round(float(v), decimals)
+            else:
+                rounded[k] = v
+        return rounded
+
+    rounded_params = _round_numeric_params(params, decimals=2)
+    # Log any changes due to rounding to help diagnose odd behaviors
+    changes = {k: (params[k], rounded_params[k]) for k in params if params[k] != rounded_params[k]}
+    if changes:
+        print("\nApplied 2-decimal rounding to float parameters:")
+        for k, (before, after) in changes.items():
+            print(f"  {k}: {before} -> {after}")
+    params = rounded_params
 
     # Print detailed info
     print(f"\n{'='*80}")
