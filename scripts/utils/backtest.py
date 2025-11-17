@@ -65,6 +65,18 @@ def backtest_strategy(
     spread_price = pips_to_price(spread_pips, symbol)
     slippage_price = pips_to_price(slippage_pips, symbol)
     pip = pip_size(symbol)
+    # Lot and pip value modeling
+    contract_size = float(account_cfg.get("contract_size", 100_000))  # units per 1.0 lot
+    pip_value_override = account_cfg.get("pip_value_per_lot")
+    if pip_value_override is not None:
+        try:
+            pip_value_per_lot = float(pip_value_override)
+        except Exception:
+            pip_value_per_lot = contract_size * pip  # fallback
+    else:
+        # Approximate pip value in account currency when quote matches account currency (e.g., EURUSD with USD account)
+        pip_value_per_lot = contract_size * pip
+    equity_rounding = float(account_cfg.get("equity_rounding", 0.0))  # e.g., 0.01 to round to cents
 
     equity = starting_balance
     peak_equity = starting_balance
@@ -129,11 +141,16 @@ def backtest_strategy(
                 # Close at decided price
                 open_trade.exit_time = nxt
                 open_trade.exit_price = float(exit_price)
+                # Compute PnL in pips, then convert to account currency using pip_value_per_lot and lot size
                 direction_mult = 1.0 if open_trade.direction == "BUY" else -1.0
-                pnl = (open_trade.exit_price - open_trade.entry_price) * direction_mult * open_trade.size
+                price_diff = (open_trade.exit_price - open_trade.entry_price)
+                pips_signed = (price_diff / pip) * direction_mult if pip > 0 else 0.0
+                pnl = pips_signed * pip_value_per_lot * open_trade.size
                 pnl -= commission  # commission on close
                 open_trade.pnl = pnl
                 equity += pnl
+                if equity_rounding and equity_rounding > 0:
+                    equity = round(equity / equity_rounding) * equity_rounding
                 open_trade.equity_after = equity
                 trades.append(open_trade)
                 open_trade = None
@@ -186,6 +203,8 @@ def backtest_strategy(
                     size=float(size),
                 )
                 equity -= commission  # commission on open
+                if equity_rounding and equity_rounding > 0:
+                    equity = round(equity / equity_rounding) * equity_rounding
 
     # Final equity at last bar
     if len(df) > 0:

@@ -9,7 +9,10 @@ account:
   min_stop_pips: 0            # ignore SLs tighter than 3 pips
   min_size: 0.1               # skip trades smaller than this size (enforce minimum lot 0.1)
   lot_step: 0.1               # round position size down to nearest 0.1 lot increment
-  max_lot_size: 5.0           # hard cap on position size (after leverage & rounding); set 0 or omit to disable
+  max_lot_size: 0.16           # hard cap on position size (after leverage & rounding); set 0 or omit to disable
+  contract_size: 100000        # units per 1.0 lot (forex standard)
+  pip_value_per_lot: 10.0      # USD value per pip for 1 lot on EURUSD-like pairs (override as needed)
+  equity_rounding: 0.01        # round equity to the nearest cent for realism
 
 broker:
   name: exness_demo
