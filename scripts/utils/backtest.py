@@ -59,6 +59,7 @@ def backtest_strategy(
     min_size = float(account_cfg.get("min_size", 0.0))            # skip trades smaller than this size
     lot_step = float(account_cfg.get("lot_step", 0.0))             # round position size down to this increment if > 0
     max_drawdown_stop_pct = float(account_cfg.get("max_drawdown_stop_pct", 0.0))  # pause trading if exceeded
+    max_lot_size = float(account_cfg.get("max_lot_size", 0.0))  # hard cap on position size (0 disables)
 
     spread_price = pips_to_price(spread_pips, symbol)
     slippage_price = pips_to_price(slippage_pips, symbol)
@@ -168,6 +169,9 @@ def backtest_strategy(
                 if lot_step and lot_step > 0:
                     # Floor to nearest multiple of lot_step
                     size = (size // lot_step) * lot_step
+                # Hard cap on absolute size after rounding/leverage
+                if max_lot_size and max_lot_size > 0 and size > max_lot_size:
+                    size = max_lot_size
                 # Skip trades that are too small to be meaningful
                 if min_size and size < min_size:
                     continue
