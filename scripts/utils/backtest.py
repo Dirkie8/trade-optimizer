@@ -22,6 +22,12 @@ class Trade:
     stop_price: float
     take_profit_price: float
     size: float  # abstract units sized by risk
+    # Optional debug/trace fields for transparency
+    stop_distance_pips: Optional[float] = None
+    size_pre_cap: Optional[float] = None
+    size_after_leverage_cap: Optional[float] = None
+    size_after_rounding: Optional[float] = None
+    size_after_max_cap: Optional[float] = None
     exit_time: Optional[pd.Timestamp] = None
     exit_price: Optional[float] = None
     pnl: Optional[float] = None
@@ -165,32 +171,45 @@ def backtest_strategy(
                     continue
                 entry_price = float(df.iloc[i + 1]["Open"])
                 if action == "BUY":
+                    # Buy fills at ask (mid + half-spread) with unfavorable slippage increasing price
                     entry_price += spread_price * 0.5 + slippage_price
                     stop_price = entry_price - pips_to_price(sl_pips, symbol)
                     take_profit_price = entry_price + pips_to_price(tp_pips, symbol)
                 else:  # SELL
-                    entry_price -= spread_price * 0.5 - slippage_price
+                    # Sell fills at bid (mid - half-spread); unfavorable slippage lowers sell price further
+                    entry_price -= spread_price * 0.5 + slippage_price
                     stop_price = entry_price + pips_to_price(sl_pips, symbol)
                     take_profit_price = entry_price - pips_to_price(tp_pips, symbol)
 
+                # Risk-based sizing in lots using pip value
+                # lots = (equity * risk_per_trade) / (stop_pips * pip_value_per_lot)
                 stop_dist = abs(entry_price - stop_price)
                 if stop_dist <= 0:
                     continue
                 risk_amount = equity * risk_frac
-                size = max(risk_amount / stop_dist, 0.0)
+                stop_pips_eff = float(sl_pips) if sl_pips is not None else (stop_dist / pip if pip > 0 else 0.0)
+                if stop_pips_eff <= 0:
+                    continue
+                # Pre-cap position size in lots (risk model)
+                size = max(risk_amount / (stop_pips_eff * pip_value_per_lot), 0.0)
+                size_pre_cap = size
                 # Respect leverage/margin if provided (cap notional exposure)
                 if leverage and leverage > 0 and entry_price > 0:
-                    allowable_size = (equity * leverage) / entry_price
+                    # allowable lots = (equity * leverage) / (contract_size * entry_price)
+                    allowable_size = (equity * leverage) / (contract_size * entry_price)
                     if allowable_size <= 0:
                         continue
                     size = min(size, allowable_size)
+                size_after_lev_cap = size
                 # Enforce lot step increments (round DOWN to avoid exceeding risk)
                 if lot_step and lot_step > 0:
                     # Floor to nearest multiple of lot_step
                     size = (size // lot_step) * lot_step
+                size_after_rounding = size
                 # Hard cap on absolute size after rounding/leverage
                 if max_lot_size and max_lot_size > 0 and size > max_lot_size:
                     size = max_lot_size
+                size_after_max_cap = size
                 # Skip trades that are too small to be meaningful
                 if min_size and size < min_size:
                     continue
@@ -201,6 +220,11 @@ def backtest_strategy(
                     stop_price=float(stop_price),
                     take_profit_price=float(take_profit_price),
                     size=float(size),
+                    stop_distance_pips=float(stop_pips_eff),
+                    size_pre_cap=float(size_pre_cap),
+                    size_after_leverage_cap=float(size_after_lev_cap),
+                    size_after_rounding=float(size_after_rounding),
+                    size_after_max_cap=float(size_after_max_cap),
                 )
                 equity -= commission  # commission on open
                 if equity_rounding and equity_rounding > 0:
@@ -277,6 +301,12 @@ def trade_to_dict(t: Trade) -> Dict[str, Any]:
         "exit_time": t.exit_time.isoformat() if t.exit_time is not None else None,
         "exit_price": t.exit_price,
         "size": t.size,
+        # Debug/trace fields
+        "stop_distance_pips": t.stop_distance_pips,
+        "size_pre_cap": t.size_pre_cap,
+        "size_after_leverage_cap": t.size_after_leverage_cap,
+        "size_after_rounding": t.size_after_rounding,
+        "size_after_max_cap": t.size_after_max_cap,
         "pnl": t.pnl,
         "equity_after": t.equity_after,
     }
