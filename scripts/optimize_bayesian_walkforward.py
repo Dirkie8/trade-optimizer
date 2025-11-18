@@ -631,11 +631,40 @@ def run_bayesian_optimization(
     df.to_csv(csv_path, index=False)
     print(f"\n{GREEN}✓ Saved all trials to: {csv_path}{RESET}")
     
+    # Prepare params (and a rounded variant for reproducibility with evaluators that round floats)
+    def _round_params(p: Dict[str, Any], decimals: int = 2) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for k, v in p.items():
+            if isinstance(v, bool) or isinstance(v, int):
+                out[k] = v
+            else:
+                try:
+                    out[k] = round(float(v), decimals)
+                except Exception:
+                    out[k] = v
+        return out
+
+    params_rounded = _round_params(study.best_params)
+
     # Save best parameters
     best_json = {
         'params': study.best_params,
+        'params_rounded': params_rounded,
         'train_reward': float(study.best_value),
         'validation_reward': float(reward_floored),
+        'symbol': symbol,
+        'timeframe': timeframe,
+        'account_cfg': account_cfg,
+        'data_split': {
+            'train': {
+                'start': train_data.index[0].isoformat() if len(train_data) else None,
+                'end': train_data.index[-1].isoformat() if len(train_data) else None,
+            },
+            'validation': {
+                'start': validation_data.index[0].isoformat() if len(validation_data) else None,
+                'end': validation_data.index[-1].isoformat() if len(validation_data) else None,
+            },
+        },
         'train_metrics': {
             k: float(v) if isinstance(v, (int, float, np.number)) else v
             for k, v in all_results[-1].items()
