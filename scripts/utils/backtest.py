@@ -89,6 +89,7 @@ def backtest_strategy(
     equity_curve: List[Dict[str, float]] = []
     open_trade: Optional[Trade] = None
     trades: List[Trade] = []
+    signal_debug: List[Dict[str, Any]] = []
 
     # Determine warmup for strategies needing history
     warmup = max_lookback if max_lookback is not None else 200
@@ -165,9 +166,10 @@ def backtest_strategy(
         if open_trade is None:
             strat = strategy_cls(window, params)
             action, sl_pips, tp_pips = strat.generate_signals()
-            if action in ("BUY", "SELL") and sl_pips and tp_pips:
+            if action in ("BUY", "SELL") and sl_pips is not None and tp_pips is not None:
                 # Enforce minimum stop distance if configured
                 if min_stop_pips and sl_pips < min_stop_pips:
+                    signal_debug.append({"time": now.isoformat(), "action": action, "sl_pips": sl_pips, "tp_pips": tp_pips, "reason": "below_min_stop"})
                     continue
                 entry_price = float(df.iloc[i + 1]["Open"])
                 if action == "BUY":
@@ -185,10 +187,12 @@ def backtest_strategy(
                 # lots = (equity * risk_per_trade) / (stop_pips * pip_value_per_lot)
                 stop_dist = abs(entry_price - stop_price)
                 if stop_dist <= 0:
+                    signal_debug.append({"time": now.isoformat(), "action": action, "sl_pips": sl_pips, "tp_pips": tp_pips, "reason": "non_positive_stop_dist"})
                     continue
                 risk_amount = equity * risk_frac
                 stop_pips_eff = float(sl_pips) if sl_pips is not None else (stop_dist / pip if pip > 0 else 0.0)
                 if stop_pips_eff <= 0:
+                    signal_debug.append({"time": now.isoformat(), "action": action, "sl_pips": sl_pips, "tp_pips": tp_pips, "reason": "non_positive_stop_pips"})
                     continue
                 # Pre-cap position size in lots (risk model)
                 size = max(risk_amount / (stop_pips_eff * pip_value_per_lot), 0.0)
@@ -198,6 +202,7 @@ def backtest_strategy(
                     # allowable lots = (equity * leverage) / (contract_size * entry_price)
                     allowable_size = (equity * leverage) / (contract_size * entry_price)
                     if allowable_size <= 0:
+                        signal_debug.append({"time": now.isoformat(), "action": action, "sl_pips": sl_pips, "tp_pips": tp_pips, "size_pre_cap": size_pre_cap, "reason": "non_positive_allowable_size"})
                         continue
                     size = min(size, allowable_size)
                 size_after_lev_cap = size
@@ -212,7 +217,15 @@ def backtest_strategy(
                 size_after_max_cap = size
                 # Skip trades that are too small to be meaningful
                 if min_size and size < min_size:
-                    continue
+                    # Allow rounding up to min_size if resulting risk does not exceed risk_amount by more than tolerance
+                    risk_tolerance_pct = float(account_cfg.get("risk_rounding_tolerance_pct", 5.0))  # default 5% tolerance
+                    risk_if_min = min_size * pip_value_per_lot * stop_pips_eff
+                    if risk_if_min <= risk_amount * (1 + risk_tolerance_pct / 100.0) and min_size <= (max_lot_size if max_lot_size else min_size):
+                        size = min_size
+                        size_after_max_cap = size  # update
+                    else:
+                        signal_debug.append({"time": now.isoformat(), "action": action, "sl_pips": sl_pips, "tp_pips": tp_pips, "size_pre_cap": size_pre_cap, "size_after_rounding": size_after_rounding, "size_after_max_cap": size_after_max_cap, "reason": "below_min_size"})
+                        continue
                 open_trade = Trade(
                     direction=action,
                     entry_time=nxt,
@@ -229,6 +242,7 @@ def backtest_strategy(
                 equity -= commission  # commission on open
                 if equity_rounding and equity_rounding > 0:
                     equity = round(equity / equity_rounding) * equity_rounding
+                signal_debug.append({"time": now.isoformat(), "action": action, "sl_pips": sl_pips, "tp_pips": tp_pips, "size_final": size, "reason": "accepted"})
 
     # Final equity at last bar
     if len(df) > 0:
@@ -287,6 +301,8 @@ def backtest_strategy(
         "win_rate_pct": win_rate * 100.0,
         "trades_detail": [trade_to_dict(t) for t in trades],
         "equity_curve": equity_curve,
+        # Debug info for diagnostics
+        "signal_debug": signal_debug,
     }
     return result
 

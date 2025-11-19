@@ -351,6 +351,8 @@ def main():
         "equity_curve": res["equity_curve"],
         # Include per-trade details: entry/exit time & price, SL/TP, size, and PnL
         "trades_detail": res.get("trades_detail", []),
+        # Include debug reasons for skipped/accepted signals (helps when no trades occur)
+        "signal_debug": res.get("signal_debug", []),
     }
 
     # Determine output path: results/<strategy>/evaluations/full_dataset_backtest.json by default
