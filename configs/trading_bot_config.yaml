@@ -20,16 +20,16 @@ runtime:
 
 risk:
   # These mirror your backtester keys
-  risk_per_trade: 0.01               # 1% per trade
+  risk_per_trade: 0.05               # 1% per trade
   spread_pips: 0.2
   commission_per_trade: 0.0
   leverage: 100
   slippage_pips: 0.1
   min_stop_pips: 0
-  min_size: 0.0
+  min_size: 0.01
   max_drawdown_stop_pct: 0
   daily_loss_limit_pct: 50           # optional daily loss cap
-  max_concurrent_positions: 8
+  max_concurrent_positions: 2
 
 # Strategies to run. Use snake_case names and point to the strategy YAML to resolve module/class/results_dir.
 # Per-strategy you can override symbol/timeframe or inherit from the strategy YAML/generic defaults.

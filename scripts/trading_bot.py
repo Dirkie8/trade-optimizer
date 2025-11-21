@@ -151,14 +151,19 @@ def run_strategy_once(
         return {'status': 'no_params'}
 
     # Optional: scale pips-based parameters if the strategy YAML declares a scale.
-    # This supports conventions like 0.11 meaning 11 pips when pips_param_scale=100.
+    # ADJUSTED RULE: Only scale values >= 1.0. Fractional pip values (<1) are
+    # treated as-is so that a config value like 0.11 produces ~0.11 pips
+    # distance (e.g. EURUSD: 0.11 * 0.0001 = 0.000011 ≈ 1 pipette), matching
+    # user expectation (entry 1.15623 -> SL 1.15622 when rounded to 5 decimals).
     pips_scale = float(strat_yaml.get('pips_param_scale', 1.0) or 1.0)
     pips_keys = strat_yaml.get('pips_param_keys') or ['stop_loss_pips', 'take_profit_pips']
     if pips_scale != 1.0:
         params = params.copy()
         for k in pips_keys:
             if k in params and isinstance(params[k], (int, float)):
-                params[k] = float(params[k]) * pips_scale
+                v = float(params[k])
+                if v >= 1.0:
+                    params[k] = v * pips_scale
 
     mod = __import__(module_path, fromlist=[strategy_class_name])
     StrategyCls = getattr(mod, strategy_class_name)
@@ -300,6 +305,15 @@ def main():
     parser.add_argument('--once', action='store_true', help='Run one pass per enabled strategy then exit')
     parser.add_argument('--dry-run', action='store_true', help='Do not send orders, only show intended actions')
     parser.add_argument('--skip-start', action='store_true', help='Skip processing of the current last closed bar; wait for next close')
+    # Test / single-trade flags
+    parser.add_argument('--test-trade', action='store_true', help='Execute a single test trade using strategy best params then exit')
+    parser.add_argument('--test-side', choices=['BUY','SELL'], help='Override strategy signal direction in test mode')
+    parser.add_argument('--test-strategy', help='Name of strategy to use for test trade (defaults first enabled)')
+    parser.add_argument('--test-sl', type=float, help='Override stop_loss_pips (raw pips, decimals allowed)')
+    parser.add_argument('--test-tp', type=float, help='Override take_profit_pips (raw pips, decimals allowed)')
+    parser.add_argument('--test-symbol', help='Override symbol for test trade')
+    parser.add_argument('--test-dry-run', action='store_true', help='Compute test trade, do not send order')
+    parser.add_argument('--test-auto-adjust', action='store_true', help='Automatically widen SL/TP to satisfy broker minimum stop distance')
     args = parser.parse_args()
 
     load_dotenv()
@@ -347,6 +361,226 @@ def main():
         strategies = [s for s in bot_cfg['strategies'] if s.get('enabled')]
         if not strategies:
             log_line('No enabled strategies.'); return
+
+        # --- Single test trade mode ---
+        if args.test_trade:
+            # Resolve strategy selection
+            chosen = None
+            if args.test_strategy:
+                for s in strategies:
+                    if s['name'] == args.test_strategy:
+                        chosen = s
+                        break
+            if chosen is None:
+                chosen = strategies[0]
+            strat_cfg_path = chosen['strategy_config']
+            # Load strategy YAML
+            try:
+                with open(strat_cfg_path,'r') as f:
+                    strat_yaml = yaml.safe_load(f)
+            except Exception as e:
+                log_line(f'Test trade: failed to load strategy YAML: {e}')
+                return
+            params = strat_yaml.get('best_params') or strat_yaml.get('parameters_best') or strat_yaml.get('best_params_15m')
+            if not isinstance(params, dict) or not params:
+                log_line('Test trade: no best_params found in YAML.')
+                return
+            # Apply same scaling adjustment as run_strategy_once
+            pips_scale = float(strat_yaml.get('pips_param_scale', 1.0) or 1.0)
+            pips_keys = strat_yaml.get('pips_param_keys') or ['stop_loss_pips','take_profit_pips']
+            if pips_scale != 1.0:
+                params = params.copy()
+                for k in pips_keys:
+                    if k in params and isinstance(params[k], (int,float)):
+                        v=float(params[k])
+                        if v >= 1.0:
+                            params[k]=v*pips_scale
+            # Overrides
+            if args.test_sl is not None:
+                params['stop_loss_pips']=float(args.test_sl)
+            if args.test_tp is not None:
+                params['take_profit_pips']=float(args.test_tp)
+            if 'stop_loss_pips' not in params or 'take_profit_pips' not in params:
+                log_line('Test trade: missing stop_loss_pips/take_profit_pips in params.')
+                return
+            side = args.test_side
+            # If side not provided we attempt to instantiate strategy class and get its signal; fall back BUY
+            symbol_tt = args.test_symbol or chosen.get('symbol') or bot_cfg['strategies'][0].get('symbol') or 'EURUSD'
+            timeframe_tt = chosen.get('timeframe') or bot_cfg['strategies'][0].get('timeframe') or '15m'
+            mt5a.ensure_symbol(symbol_tt)
+            import MetaTrader5 as mt5
+            try:
+                tick = mt5a.current_tick(symbol_tt)
+            except Exception:
+                log_line('Test trade: failed to fetch tick.')
+                return
+            bid=tick['bid']; ask=tick['ask']
+            pip=_pip_size_from_mt5(symbol_tt)
+            # --- Minimum stop distance / levels ---
+            min_stop_distance_points = None
+            freeze_level_points = None
+            min_stop_price_dist = None
+            try:
+                info = mt5.symbol_info(symbol_tt)
+                if info is not None:
+                    # trade_stops_level is in POINTS (not pips). For 5-digit, point=0.00001.
+                    min_stop_distance_points = getattr(info,'trade_stops_level',None)
+                    freeze_level_points = getattr(info,'freeze_level',None)
+                    point_val = getattr(info,'point',None)
+                    if point_val and min_stop_distance_points and min_stop_distance_points>0:
+                        min_stop_price_dist = min_stop_distance_points * point_val
+            except Exception:
+                pass
+            # Decide action
+            if side is None:
+                # Try to construct the strategy to get a real signal
+                try:
+                    strat_info = strat_yaml['strategy']
+                    strategy_class_name = strat_info['class']
+                    module_path = strat_info.get('module', 'functions.strategies')
+                    mod = __import__(module_path, fromlist=[strategy_class_name])
+                    StrategyCls = getattr(mod, strategy_class_name)
+                    warmup = infer_max_lookback(params)
+                    df_sig = mt5a.fetch_recent_bars(symbol_tt, timeframe_tt, count=warmup + 5)
+                    if len(df_sig) >= 2:
+                        df_closed_sig = df_sig.iloc[:-1]
+                        strat_inst = StrategyCls(df_closed_sig, params)
+                        action_sig, sl_pips_sig, tp_pips_sig = strat_inst.generate_signals()
+                        if action_sig in ('BUY','SELL') and sl_pips_sig and tp_pips_sig:
+                            side = action_sig
+                            # Use strategy-provided pips (after scaling logic) unless user overrides
+                            if args.test_sl is None:
+                                params['stop_loss_pips']=sl_pips_sig
+                            if args.test_tp is None:
+                                params['take_profit_pips']=tp_pips_sig
+                except Exception as e:
+                    log_line(f'Test trade: strategy signal resolution failed: {e}; defaulting to BUY')
+                    side='BUY'
+            if side is None:
+                side='BUY'
+            entry_price = ask if side=='BUY' else bid
+            sl_pips = float(params['stop_loss_pips'])
+            tp_pips = float(params['take_profit_pips'])
+            if side=='BUY':
+                sl_price = entry_price - sl_pips * pip
+                tp_price = entry_price + tp_pips * pip
+            else:
+                sl_price = entry_price + sl_pips * pip
+                tp_price = entry_price - tp_pips * pip
+            # Validate minimum stop distance (only for SL; TP usually also must exceed distance on some brokers)
+            def _adjust_level(level_price: float, is_sl: bool) -> float:
+                # Round to symbol digits
+                try:
+                    info = mt5.symbol_info(symbol_tt)
+                    digits = getattr(info,'digits',None)
+                    if digits is not None:
+                        return round(level_price, digits)
+                except Exception:
+                    pass
+                return round(level_price,5)
+            sl_price = _adjust_level(sl_price, True)
+            tp_price = _adjust_level(tp_price, False)
+            invalid_stop = False
+            if min_stop_price_dist and min_stop_price_dist>0:
+                if side=='BUY':
+                    if entry_price - sl_price < min_stop_price_dist:
+                        invalid_stop = True
+                else:
+                    if sl_price - entry_price < min_stop_price_dist:
+                        invalid_stop = True
+                # Basic TP distance check (optional)
+                tp_invalid = False
+                if side=='BUY':
+                    if tp_price - entry_price < min_stop_price_dist:
+                        tp_invalid = True
+                else:
+                    if entry_price - tp_price < min_stop_price_dist:
+                        tp_invalid = True
+                if invalid_stop or tp_invalid:
+                    msg = f"[TEST] Broker min stop distance={min_stop_price_dist:.5f} (points={min_stop_distance_points}) violated: SL_delta={(abs(entry_price-sl_price)):.5f} TP_delta={(abs(tp_price-entry_price)):.5f}"
+                    log_line(msg)
+                    if args.test_auto_adjust:
+                        # Widen SL/TP to minimum distance preserving direction
+                        if side=='BUY':
+                            sl_price = entry_price - min_stop_price_dist
+                            if tp_invalid: tp_price = entry_price + max(min_stop_price_dist, abs(tp_price-entry_price))
+                        else:
+                            sl_price = entry_price + min_stop_price_dist
+                            if tp_invalid: tp_price = entry_price - max(min_stop_price_dist, abs(tp_price-entry_price))
+                        sl_price = _adjust_level(sl_price, True)
+                        tp_price = _adjust_level(tp_price, False)
+                        log_line(f"[TEST] Auto-adjusted SL={sl_price:.5f} TP={tp_price:.5f}")
+                    else:
+                        log_line("[TEST] Use --test-auto-adjust or increase stop_loss_pips / take_profit_pips.")
+            # Lot sizing (reuse logic subset from run_strategy_once)
+            ai = mt5.account_info()
+            balance = general_defaults['account_balance_placeholder']
+            free_margin = None
+            if ai is not None:
+                balance = getattr(ai,'equity',None) or getattr(ai,'balance',balance)
+                free_margin = getattr(ai,'margin_free',None)
+            lev = risk_cfg.get('leverage',100)
+            # Cap candidates
+            cap_candidates=[]
+            if free_margin is not None:
+                cap_candidates.append(theoretical_max_lots_from_free_margin(free_margin, lev, entry_price))
+            mcp = risk_cfg.get('max_concurrent_positions')
+            maot = risk_cfg.get('max_allowed_open_trades') if not mcp else None
+            per_trade_divisor=None
+            if mcp and isinstance(mcp,(int,float)) and mcp>0:
+                per_trade_divisor=float(mcp)
+            elif maot and isinstance(maot,(int,float)) and maot>0:
+                per_trade_divisor=float(maot)
+            if per_trade_divisor:
+                try:
+                    per_trade_budget = balance / per_trade_divisor
+                    effective_budget = min(per_trade_budget, free_margin) if free_margin is not None else per_trade_budget
+                    cap_candidates.append(theoretical_max_lots_from_margin_budget(effective_budget, lev, entry_price))
+                except Exception:
+                    pass
+            theoretical_cap = min(cap_candidates) if cap_candidates else theoretical_max_lots(balance, lev, entry_price)
+            stop_dist = abs(entry_price - sl_price)
+            risk_amount = balance * risk_cfg['risk_per_trade']
+            raw_lot = risk_amount / (stop_dist * 100000) if stop_dist>0 else 0
+            lot = min(raw_lot, theoretical_cap) if raw_lot>0 else 0
+            min_size = float(risk_cfg.get('min_size', 0.01) or 0.01)
+            lot_step = float(risk_cfg.get('lot_step', 0.01) or 0.01)
+            max_lot_size = float(risk_cfg.get('max_lot_size', 0.0) or 0.0)
+            if lot_step and lot_step>0:
+                lot = (lot // lot_step)*lot_step
+            else:
+                lot = math.floor(lot*100)/100.0
+            if max_lot_size and max_lot_size>0 and lot>max_lot_size:
+                lot=max_lot_size
+            deviation_points = risk_cfg.get('deviation_points')
+            if deviation_points is None:
+                deviation_points = max(int(risk_cfg.get('slippage_pips',0.1)*10),20)
+            log_line(f"[TEST] entry={entry_price:.5f} pip_size={pip:.5f} sl_pips={sl_pips} tp_pips={tp_pips} -> SL={sl_price:.5f} TP={tp_price:.5f}")
+            log_line(f"[TEST] raw_lot={raw_lot:.4f} capped={lot:.4f} balance={balance:.2f} risk_amt={risk_amount:.2f} stop_dist={stop_dist:.5f}")
+            order_request = {
+                'symbol': symbol_tt,
+                'volume': lot,
+                'order_type': side,
+                'price': entry_price,
+                'sl': sl_price,
+                'tp': tp_price,
+                'slippage_points': int(deviation_points),
+                'magic': general_defaults['magic_number'],
+                'comment': 'test_trade',
+            }
+            if lot < min_size:
+                log_line(f"[TEST] Aborting: lot {lot:.4f} below min_size {min_size}")
+                return
+            if invalid_stop and not args.test_auto_adjust:
+                log_line("[TEST] Aborting: invalid stop levels (broker constraints).")
+                return
+            if args.test_dry_run:
+                log_line(f"[TEST] DRY-RUN order: {order_request}")
+                return
+            # Send order
+            result = mt5a.send_market_order(**order_request)
+            log_line(f"[TEST] send_market_order retcode={result.get('retcode')} order={result}")
+            return
 
         # Header
         import MetaTrader5 as mt5

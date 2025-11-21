@@ -4,7 +4,7 @@ strategy:
   results_dir: keltner_squeeze_breakout
 name: Keltner Squeeze Breakout
 # When using best_params below, interpret stop/take values with this scale (e.g., 0.11 -> 11 pips when scale=100)
-pips_param_scale: 100
+pips_param_scale: 1
 # Keys to scale by pips_param_scale
 pips_param_keys:
   - stop_loss_pips
@@ -72,8 +72,8 @@ best_params_15m:
   take_profit_pips: 15
   stop_loss_pips: 18
 best_params:
-  period: 6
-  bb_std: 1.12051
-  kc_mult: 1.71934
-  take_profit_pips: 3.88
-  stop_loss_pips: 0.11
+  period: 16
+  bb_std: 1.243501
+  kc_mult: 1.259597
+  take_profit_pips: 10.78
+  stop_loss_pips: 10.44
