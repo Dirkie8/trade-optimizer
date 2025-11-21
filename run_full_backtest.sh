@@ -12,13 +12,17 @@ if [ -x "$(pwd)/python-3.12.4/bin/python3.12" ]; then
 fi
 
 usage() {
-  echo "Usage: $0 [--all | <StrategyNameOrConfigPath>] [--results-root <dir>]"
+  echo "Usage: $0 [--all | <StrategyNameOrConfigPath>] [--results-root <dir>] [--param-source <auto|opt|yaml|best_yaml>] [--no-round]"
   echo "  --all                 Evaluate all strategies that have a folder under results-root"
   echo "  --results-root <dir>  Root results directory to pull params from (default: results)"
+  echo "  --param-source <src>  Where to source params: auto|opt|yaml|best_yaml (default: auto)"
+  echo "  --no-round            Disable rounding floats to 2 decimals in evaluator"
   exit 0
 }
 
 RESULTS_ROOT="results"
+PARAM_SOURCE="auto"
+NO_ROUND_FLAG=""
 
 # Parse args (support --results-root anywhere)
 ARGS=()
@@ -28,6 +32,10 @@ while [[ $# -gt 0 ]]; do
       usage ;;
     --results-root)
       RESULTS_ROOT="$2"; shift 2 ;;
+    --param-source)
+      PARAM_SOURCE="$2"; shift 2 ;;
+    --no-round)
+      NO_ROUND_FLAG="--no_round"; shift 1 ;;
     *)
       ARGS+=("$1"); shift ;;
   esac
@@ -132,7 +140,9 @@ for cfg in "${CONFIGS[@]}"; do
   $PY scripts/evaluate_strategy.py \
     --strategy_config "$cfg" \
     --main_config configs/main_config.yaml \
-    --results_root "$RESULTS_ROOT"
+    --results_root "$RESULTS_ROOT" \
+    --param_source "$PARAM_SOURCE" \
+    $NO_ROUND_FLAG
 done
 
 echo "All evaluations complete."

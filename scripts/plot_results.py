@@ -86,12 +86,19 @@ def main():
         return output_path
 
     if args.batch:
-        # Discover all evaluation JSONs
+        # Discover evaluation/validation JSONs
+        # - For any 'evaluations' folder: include ALL .json files
+        # - For 'optimizations' folder: include validation JSONs only (those that have equity_curve)
         eval_files = []
         for root, dirs, files in os.walk("results"):
-            if os.path.basename(root) == "evaluations" or os.path.basename(root) == "optimizations":
+            base = os.path.basename(root)
+            if base == "evaluations":
                 for fn in files:
-                    if fn in ("full_dataset_backtest.json", "eval_results.json") or "validation.json" in fn:
+                    if fn.lower().endswith(".json"):
+                        eval_files.append(os.path.join(root, fn))
+            elif base == "optimizations":
+                for fn in files:
+                    if "validation.json" in fn:
                         eval_files.append(os.path.join(root, fn))
         eval_files.sort()
         if not eval_files:
