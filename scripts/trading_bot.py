@@ -124,6 +124,29 @@ def _append_trade_journal(csv_path: Path, row: Dict[str, Any]) -> None:
         pass
 
 
+def _append_balance_journal(csv_path: Path, row: Dict[str, Any]) -> None:
+    """Append a single account balance/equity row to CSV. Creates parent dir if needed."""
+    try:
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        headers = ['ts_utc','balance','equity','margin','margin_free','leverage','profit']
+        file_exists = csv_path.exists()
+        with csv_path.open('a', encoding='utf-8') as f:
+            if not file_exists:
+                f.write(','.join(headers)+'\n')
+            values = [
+                str(row.get('ts_utc','')),
+                str(row.get('balance','')),
+                str(row.get('equity','')),
+                str(row.get('margin','')),
+                str(row.get('margin_free','')),
+                str(row.get('leverage','')),
+                str(row.get('profit','')),
+            ]
+            f.write(','.join(values)+'\n')
+    except Exception:
+        pass
+
+
 def run_strategy_once(
     strategy_cfg_path: str,
     strategy_section: Dict[str, Any],
@@ -209,7 +232,7 @@ def run_strategy_once(
                 return {'status':'position_limit','closed_bar_ts':closed_ts}
         except Exception:
             pass
-
+    
     lev = risk_cfg.get('leverage',100)
     # Cap candidates: free margin and per-trade margin budget
     cap_candidates = []
@@ -687,7 +710,32 @@ def main():
             intervals = int(mins_since//minutes)+1
             return day_start + timedelta(minutes=intervals*minutes)
 
+        # balance/history CSV
+        balance_journal_path = Path(bot_cfg.get('runtime',{}).get('balance_journal_path','scripts/outputs/balance_history.csv'))
+        balance_journal_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Only write balance/equity to CSV once per minute to reduce data volume.
+        last_balance_poll: datetime | None = None
+
         while True:
+            try:
+                now_bal = datetime.now(timezone.utc)
+                if last_balance_poll is None or (now_bal - last_balance_poll).total_seconds() >= 60:
+                    ai_loop = mt5.account_info()
+                    if ai_loop is not None:
+                        _append_balance_journal(balance_journal_path, {
+                            'ts_utc': now_bal.strftime('%Y-%m-%d %H:%M:%S'),
+                            'balance': getattr(ai_loop,'balance',None),
+                            'equity': getattr(ai_loop,'equity',None),
+                            'margin': getattr(ai_loop,'margin',None),
+                            'margin_free': getattr(ai_loop,'margin_free',None),
+                            'leverage': risk_cfg.get('leverage'),
+                            'profit': getattr(ai_loop,'profit',None),
+                        })
+                        last_balance_poll = now_bal
+            except Exception:
+                pass
+
             for strat in strategies:
                 symbol_res = resolve_symbol(strat.get('symbol'))
                 timeframe = strat.get('timeframe') or general_defaults['general']['default_timeframe']

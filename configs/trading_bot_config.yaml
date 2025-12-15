@@ -29,7 +29,7 @@ risk:
   min_size: 0.01
   max_drawdown_stop_pct: 0
   daily_loss_limit_pct: 50           # optional daily loss cap
-  max_concurrent_positions: 2
+  max_concurrent_positions: 1
 
 # Strategies to run. Use snake_case names and point to the strategy YAML to resolve module/class/results_dir.
 # Per-strategy you can override symbol/timeframe or inherit from the strategy YAML/generic defaults.
