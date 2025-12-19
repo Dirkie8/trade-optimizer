@@ -2,6 +2,7 @@ pandas>=1.5
 numpy>=1.23
 matplotlib>=3.7
 pyyaml>=6.0
+python-dotenv
 torch>=2.0; platform_system != 'Darwin' or platform_machine != 'arm64'
 tqdm>=4.66
 optuna>=3.0  # Gradient-based hyperparameter optimization

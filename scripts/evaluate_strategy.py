@@ -20,6 +20,7 @@ import yaml
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from scripts.utils.data_utils import load_data
 from scripts.utils.backtest import backtest_strategy
+from scripts.utils.strategy_utils_v2 import infer_max_lookback as infer_max_lookback_shared
 import importlib
 
 
@@ -96,9 +97,8 @@ def select_params(strategy_conf: Dict[str, Any], default_opt_dir: str, optimizat
 
 
 def infer_max_lookback(strategy_name: str, params: Dict[str, Any]) -> int:
-    if strategy_name == "Moving Average Cross Strategy":
-        return int(max(params.get("long_ma_period", 200), params.get("short_ma_period", 50))) + 2
-    return 200
+    # Use shared lookback inference so evaluator/replay/optimizer agree
+    return int(infer_max_lookback_shared(params))
 
 
 def main():

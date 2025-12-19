@@ -9,3 +9,5 @@ python-3.12.4/
 logs/
 results*
 .venv/
+data/raw/
+data/

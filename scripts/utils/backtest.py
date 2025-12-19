@@ -43,13 +43,17 @@ def backtest_strategy(
     max_lookback: Optional[int] = None,
     progress: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Run a simple one-position-at-a-time backtest with SL/TP.
+    """Run a backtest with SL/TP supporting configurable concurrent positions.
 
-    - Positions are opened at the next bar's open.
-    - SL is checked before TP within each bar to be conservative.
-    - Spread is applied half at entry and half at exit.
-    - Commission is subtracted at close as a fixed amount.
-    - Position sizing: risk_per_trade * balance divided by stop distance.
+    Behavior:
+      - Trades are opened at the NEXT bar's open after a signal.
+      - SL is evaluated before TP per bar for conservative fills.
+      - Spread applied half at entry and half at exit. Optional slippage.
+      - Commission applied on open and close.
+      - Position sizing: risk_per_trade * equity / (stop_pips * pip_value_per_lot).
+      - Concurrency: controlled via account_cfg['max_concurrent_positions'] (default 1 for legacy behavior).
+        * If == 1 the logic is unchanged (only seek a new trade if none open).
+        * If > 1 the strategy can add trades while others are still open up to the cap.
     """
 
     df = data.copy()
@@ -67,6 +71,9 @@ def backtest_strategy(
     lot_step = float(account_cfg.get("lot_step", 0.0))             # round position size down to this increment if > 0
     max_drawdown_stop_pct = float(account_cfg.get("max_drawdown_stop_pct", 0.0))  # pause trading if exceeded
     max_lot_size = float(account_cfg.get("max_lot_size", 0.0))  # hard cap on position size (0 disables)
+    # Optional entry cooldown controls
+    cooldown_bars_after_exit = int(account_cfg.get("cooldown_bars_after_exit", 0) or 0)
+    no_same_bar_reentry = bool(account_cfg.get("no_same_bar_reentry", False))
 
     spread_price = pips_to_price(spread_pips, symbol)
     slippage_price = pips_to_price(slippage_pips, symbol)
@@ -87,9 +94,12 @@ def backtest_strategy(
     equity = starting_balance
     peak_equity = starting_balance
     equity_curve: List[Dict[str, float]] = []
-    open_trade: Optional[Trade] = None
+    # Track multiple open trades if allowed. For legacy single-trade behavior this list will be length 0 or 1.
+    open_trades: List[Trade] = []
     trades: List[Trade] = []
     signal_debug: List[Dict[str, Any]] = []
+    # Track exit timing for cooldown logic
+    last_exit_bar_index: int | None = None
 
     # Determine warmup for strategies needing history
     warmup = max_lookback if max_lookback is not None else 200
@@ -106,10 +116,13 @@ def backtest_strategy(
     else:
         bar = iter_range
 
+    max_concurrent = int(account_cfg.get("max_concurrent_positions", 1) or 1)
+
     for i in bar:
         now = index[i]
         nxt = index[i + 1]
         window = df.iloc[: i + 1]
+        closed_this_bar = False
 
         # Update equity curve at current bar close
         equity_curve.append({"time": now.isoformat(), "equity": equity})
@@ -123,47 +136,55 @@ def backtest_strategy(
                 # Next append for last bar happens after loop; we exit now to stop further trades
                 break
 
-        # If trade is open, check if SL/TP hit within next bar
-        if open_trade is not None:
-            # Next bar's OHLC
-            o = float(df.iloc[i + 1]["Open"])  # entry/exit use next bar open
+        # If there are open trades, evaluate exits for each independently.
+        if open_trades:
             h = float(df.iloc[i + 1]["High"])
             l = float(df.iloc[i + 1]["Low"])
+            # Iterate over a COPY so we can remove closed trades from original list.
+            for ot in list(open_trades):
+                exit_price = None
+                if ot.direction == "BUY":
+                    if l <= ot.stop_price:
+                        exit_price = ot.stop_price - spread_price * 0.5 - slippage_price
+                    elif h >= ot.take_profit_price:
+                        exit_price = ot.take_profit_price - spread_price * 0.5 - slippage_price
+                else:  # SELL
+                    if h >= ot.stop_price:
+                        exit_price = ot.stop_price + spread_price * 0.5 + slippage_price
+                    elif l <= ot.take_profit_price:
+                        exit_price = ot.take_profit_price + spread_price * 0.5 + slippage_price
+                if exit_price is not None:
+                    ot.exit_time = nxt
+                    ot.exit_price = float(exit_price)
+                    direction_mult = 1.0 if ot.direction == "BUY" else -1.0
+                    price_diff = (ot.exit_price - ot.entry_price)
+                    pips_signed = (price_diff / pip) * direction_mult if pip > 0 else 0.0
+                    pnl = pips_signed * pip_value_per_lot * ot.size
+                    pnl -= commission
+                    ot.pnl = pnl
+                    equity += pnl
+                    if equity_rounding and equity_rounding > 0:
+                        equity = round(equity / equity_rounding) * equity_rounding
+                    ot.equity_after = equity
+                    trades.append(ot)
+                    open_trades.remove(ot)
+                    closed_this_bar = True
+                    last_exit_bar_index = i + 1
 
-            # Determine exit
-            exit_price = None
-            if open_trade.direction == "BUY":
-                # SL first
-                if l <= open_trade.stop_price:
-                    exit_price = open_trade.stop_price - spread_price * 0.5 - slippage_price
-                elif h >= open_trade.take_profit_price:
-                    exit_price = open_trade.take_profit_price - spread_price * 0.5 - slippage_price
-            else:  # SELL
-                if h >= open_trade.stop_price:
-                    exit_price = open_trade.stop_price + spread_price * 0.5 + slippage_price
-                elif l <= open_trade.take_profit_price:
-                    exit_price = open_trade.take_profit_price + spread_price * 0.5 + slippage_price
+        # Open new trade(s) if capacity available.
+        # Legacy behavior: only attempt if no open trades when max_concurrent == 1.
+        can_open_now = ((max_concurrent == 1 and not open_trades) or (max_concurrent > 1 and len(open_trades) < max_concurrent))
+        # Apply re-entry cooldown rules
+        if can_open_now and (no_same_bar_reentry and closed_this_bar):
+            signal_debug.append({"time": now.isoformat(), "reason": "same_bar_reentry_blocked"})
+            can_open_now = False
+        if can_open_now and cooldown_bars_after_exit and last_exit_bar_index is not None:
+            # Entry occurs at nxt (i+1); ensure enough bars have passed since last_exit_bar_index
+            if (i + 1) - last_exit_bar_index < cooldown_bars_after_exit:
+                signal_debug.append({"time": now.isoformat(), "reason": "cooldown_active", "cooldown_bars_after_exit": cooldown_bars_after_exit})
+                can_open_now = False
 
-            if exit_price is not None:
-                # Close at decided price
-                open_trade.exit_time = nxt
-                open_trade.exit_price = float(exit_price)
-                # Compute PnL in pips, then convert to account currency using pip_value_per_lot and lot size
-                direction_mult = 1.0 if open_trade.direction == "BUY" else -1.0
-                price_diff = (open_trade.exit_price - open_trade.entry_price)
-                pips_signed = (price_diff / pip) * direction_mult if pip > 0 else 0.0
-                pnl = pips_signed * pip_value_per_lot * open_trade.size
-                pnl -= commission  # commission on close
-                open_trade.pnl = pnl
-                equity += pnl
-                if equity_rounding and equity_rounding > 0:
-                    equity = round(equity / equity_rounding) * equity_rounding
-                open_trade.equity_after = equity
-                trades.append(open_trade)
-                open_trade = None
-
-        # If no open trade, get signal at current bar close and open on next bar open
-        if open_trade is None:
+        if can_open_now:
             strat = strategy_cls(window, params)
             action, sl_pips, tp_pips = strat.generate_signals()
             if action in ("BUY", "SELL") and sl_pips is not None and tp_pips is not None:
@@ -226,7 +247,7 @@ def backtest_strategy(
                     else:
                         signal_debug.append({"time": now.isoformat(), "action": action, "sl_pips": sl_pips, "tp_pips": tp_pips, "size_pre_cap": size_pre_cap, "size_after_rounding": size_after_rounding, "size_after_max_cap": size_after_max_cap, "reason": "below_min_size"})
                         continue
-                open_trade = Trade(
+                new_trade = Trade(
                     direction=action,
                     entry_time=nxt,
                     entry_price=float(entry_price),
@@ -243,6 +264,7 @@ def backtest_strategy(
                 if equity_rounding and equity_rounding > 0:
                     equity = round(equity / equity_rounding) * equity_rounding
                 signal_debug.append({"time": now.isoformat(), "action": action, "sl_pips": sl_pips, "tp_pips": tp_pips, "size_final": size, "reason": "accepted"})
+                open_trades.append(new_trade)
 
     # Final equity at last bar
     if len(df) > 0:

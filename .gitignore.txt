@@ -6,6 +6,4 @@ __pycache__/
 results/
 cache/
 python-3.12.4/
-data/
 logs/
-results*

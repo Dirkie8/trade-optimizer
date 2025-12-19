@@ -34,7 +34,7 @@ def _kc(df: pd.DataFrame, n: int, atr_mult: float):
     return ma, upper, lower
 
 
-class KeltnerSqueezeBreakout(BaseStrategy):
+class KeltnerSqueezeBreakoutAutoSl(BaseStrategy):
     """Keltner squeeze breakout with dynamic SL/TP based on prior bar extremes.
 
     Contract: returns (action, sl_pips, tp_pips)
@@ -62,6 +62,9 @@ class KeltnerSqueezeBreakout(BaseStrategy):
         kc_mult = float(cfg.get("kc_mult", 1.5))
         sl_ratio = float(cfg.get("sl_ratio", 1.0))
         tp_ratio = float(cfg.get("tp_ratio", 2.0))
+        # Minimum SL (in pips). If not provided defaults to 20 pips.
+        # This prevents unrealistically tight stops that can arise when the base distance is very small.
+        min_sl_pips = float(cfg.get("min_sl_pips", 20.0))
 
         df = self.data
         c = df["Close"]
@@ -92,6 +95,12 @@ class KeltnerSqueezeBreakout(BaseStrategy):
             tp_dist = tp_ratio * base
             sl_pips = sl_dist / pip
             tp_pips = tp_dist / pip
+            # Enforce minimum stop distance (cap to keep ratio consistent)
+            if sl_pips < min_sl_pips:
+                # Scale both distances to preserve original TP:SL multiple
+                ratio = tp_pips / sl_pips if sl_pips > 0 else tp_ratio / max(sl_ratio, 1e-9)
+                sl_pips = min_sl_pips
+                tp_pips = sl_pips * ratio
             return "BUY", sl_pips, tp_pips
 
         if squeeze_prev and cl < float(bb_l.iloc[-1]):
@@ -103,6 +112,10 @@ class KeltnerSqueezeBreakout(BaseStrategy):
             tp_dist = tp_ratio * base
             sl_pips = sl_dist / pip
             tp_pips = tp_dist / pip
+            if sl_pips < min_sl_pips:
+                ratio = tp_pips / sl_pips if sl_pips > 0 else tp_ratio / max(sl_ratio, 1e-9)
+                sl_pips = min_sl_pips
+                tp_pips = sl_pips * ratio
             return "SELL", sl_pips, tp_pips
 
         return "HOLD", None, None

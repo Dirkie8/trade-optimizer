@@ -1,38 +1,67 @@
-# Trading bot configuration
-# This file controls live trading via MetaTrader 5 using Exness.
+# Trading bot configuration (aligned with main_config.yaml)
+# Canonical trading/risk keys live under `account` and mirror the backtester.
+# Runtime options are under `runtime`. Strategy list defines which YAMLs to run.
+
+general:
+  # Align defaults with `configs/main_config.yaml`
+  default_symbol: "frxEURUSD"
+  default_timeframe: "5m"
 
 account:
-  # Note: For MT5 on macOS, running via Windows/VPS is recommended.
+  # Broker / session
   broker: exness
-  # If your MT5 terminal is already logged in, login/password may be optional here.
   login: null
   password: null
   server: null
   magic_number: 123456
 
-runtime:
-  results_root: "results"           # where to read optimized params from
-  poll_interval_seconds: 2           # main loop sleep
-  log_level: INFO
-  max_retries: 5
-  reconnect_backoff_seconds: 5
-  process_on_start: false            # process signals on startup
-
-risk:
-  # These mirror your backtester keys
-  risk_per_trade: 0.05               # 1% per trade
+  # Trading & risk behavior (mirror backtester)
+  starting_balance: 100
+  risk_per_trade: 0.05
   spread_pips: 0.2
   commission_per_trade: 0.0
   leverage: 100
+  max_concurrent_positions: 1
+  max_drawdown_stop_pct: 0
   slippage_pips: 0.1
   min_stop_pips: 0
   min_size: 0.01
-  max_drawdown_stop_pct: 0
-  daily_loss_limit_pct: 50           # optional daily loss cap
-  max_concurrent_positions: 1
+  lot_step: 0.01
+  max_lot_size: 1.00
+  contract_size: 100000
+  pip_value_per_lot: 10.0
+  equity_rounding: 0.01
+  # Entry cooldown controls (optional; default off)
+  no_same_bar_reentry: false   # if true, block opening a new trade on the same bar an exit occurred
+  cooldown_bars_after_exit: 0  # number of full bars to wait after an exit before next entry
+
+  # Optional daily risk guard (bot-only)
+  daily_loss_limit_pct: 0
+
+runtime:
+  results_root: "results"            # Read optimized params/artifacts (if needed by future features)
+  poll_interval_seconds: 2            # Main loop sleep
+  log_level: INFO
+  max_retries: 5
+  reconnect_backoff_seconds: 5
+  process_on_start: false             # Wait for next closed candle before first processing
+  log_path: "logs/trading_bot.log"
+  journal_path: "scripts/outputs/trade_journal.csv"
+  balance_journal_path: "scripts/outputs/balance_history.csv"
+  # Ensure live uses same param rounding convention as evaluator (2 decimals)
+  apply_param_rounding: true
+  round_params_decimals: 2
+
+  # Candle-close alignment window (optional fine-tuning)
+  candle_alignment:
+    enabled: true
+    pre_close_seconds: 120
+    post_close_seconds: 60
+    dense_poll_seconds: 2
+    idle_min_sleep: 30
 
 # Strategies to run. Use snake_case names and point to the strategy YAML to resolve module/class/results_dir.
-# Per-strategy you can override symbol/timeframe or inherit from the strategy YAML/generic defaults.
+# Per-strategy you can override symbol/timeframe or inherit from `general`.
 strategies:
   - name: keltner_squeeze_breakout
     enabled: true

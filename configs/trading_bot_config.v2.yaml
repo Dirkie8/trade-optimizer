@@ -1,0 +1,48 @@
+# v2 trading bot configuration (aligned)
+
+account:
+  login: null        # or set via .env MT5_LOGIN
+  password: null     # or set via .env MT5_PASSWORD
+  server: null       # or set via .env MT5_SERVER
+  magic_number: 20251215
+
+runtime:
+  log_path: logs/trading_bot_v2.log
+  journal_path: scripts/outputs/trade_journal_v2.csv
+  balance_journal_path: scripts/outputs/balance_history_v2.csv
+  results_root: results
+  process_on_start: false
+  poll_interval_seconds: 5
+  candle_alignment:
+    enabled: true
+    pre_close_seconds: 120
+    post_close_seconds: 60
+    dense_poll_seconds: 5
+    idle_min_sleep: 30
+  symbol_aliases: {}
+
+risk:
+  risk_per_trade: 0.01
+  leverage: 100
+  lot_step: 0.01
+  min_size: 0.01
+  max_lot_size: 0.0           # 0 means no explicit cap
+  max_concurrent_positions: 1 # per symbol
+  deviation_points: null      # if null, derive from slippage_pips * 10
+  slippage_pips: 0.1
+
+# Uses main_config.v2.yaml for symbol/timeframe
+general:
+  main_config_path: configs/main_config.v2.yaml
+
+# Strategies to run (enable/disable at will)
+strategies:
+  - name: ExampleStrategy
+    enabled: false
+    strategy_config: functions/configs/example_strategy.yaml
+    symbol: null      # fallback to main_config.v2
+    timeframe: null   # fallback to main_config.v2
+    # params_source: yaml | results
+    params_source: yaml
+    # If params_source==results, optional explicit path; else will look under results_root/<dir>/optimizations/*best*.json
+    params_results_path: null

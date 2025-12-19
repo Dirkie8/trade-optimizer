@@ -473,7 +473,8 @@ def run_bayesian_optimization(
             # Store result
             result_row = {
                 **{f'param_{k}': v for k, v in params.items()},
-                **result
+                **result,
+                'trial_number': trial.number,
             }
             all_results.append(result_row)
             
@@ -631,6 +632,23 @@ def run_bayesian_optimization(
     df.to_csv(csv_path, index=False)
     print(f"\n{GREEN}✓ Saved all trials to: {csv_path}{RESET}")
     
+    # Identify the best trial's training metrics row from all_results
+    def _extract_params_from_row(row: Dict[str, Any]) -> Dict[str, Any]:
+        return {k.replace('param_', ''): row[k] for k in row.keys() if k.startswith('param_')}
+
+    best_row = None
+    for row in all_results:
+        row_params = _extract_params_from_row(row)
+        if params_equal(row_params, study.best_params, param_tolerance):
+            best_row = row
+            break
+    if best_row is None:
+        # Fallback: choose row with max reward_metric (handles float rounding / tolerance mismatches)
+        try:
+            best_row = max(all_results, key=lambda r: r.get('reward_metric', float('-inf')))
+        except Exception:
+            best_row = all_results[-1] if all_results else {}
+
     # Prepare params (and a rounded variant for reproducibility with evaluators that round floats)
     def _round_params(p: Dict[str, Any], decimals: int = 2) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -667,8 +685,8 @@ def run_bayesian_optimization(
         },
         'train_metrics': {
             k: float(v) if isinstance(v, (int, float, np.number)) else v
-            for k, v in all_results[-1].items()
-            if not k.startswith('param_') and k not in ['equity_curve', 'trades']
+            for k, v in (best_row or {}).items()
+            if not str(k).startswith('param_') and k not in ['equity_curve', 'trades']
         },
         'validation_metrics': {
             'reward_metric': float(reward_floored),

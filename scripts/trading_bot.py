@@ -19,6 +19,7 @@ DISCLAIMER: Prototype. Test thoroughly on demo before using live funds.
 """
 from __future__ import annotations
 import argparse
+import json
 import csv
 import math
 import os
@@ -36,7 +37,9 @@ from dotenv import load_dotenv
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from scripts.utils.mt5_adapter import MT5Adapter
-from scripts.utils.data_utils import pip_size
+from scripts.utils.data_utils import pip_size, load_data, pips_to_price
+from scripts.utils.backtest import backtest_strategy
+from scripts.utils.strategy_utils_v2 import infer_max_lookback as infer_max_lookback_shared
 
 
 def to_snake(name: str) -> str:
@@ -46,24 +49,39 @@ def to_snake(name: str) -> str:
     return name.replace('__', '_').lower()
 
 
+def _try_import_mt5():
+    """Attempt to import MetaTrader5 dynamically; return module or None (for macOS replay)."""
+    try:
+        import importlib
+        return importlib.import_module('MetaTrader5')
+    except Exception:
+        return None
+
+
 def infer_max_lookback(params: Dict[str, Any]) -> int:
-    candidates = [int(v) for k, v in params.items() if isinstance(v, (int, float)) and any(tok in k.lower() for tok in ("period", "window", "lookback"))]
-    return max(candidates) + 50 if candidates else 250
+    """Delegate to shared inference so evaluator/bot use the same warmup."""
+    try:
+        return int(infer_max_lookback_shared(params))
+    except Exception:
+        # Fallback for extreme cases
+        candidates = [int(v) for k, v in params.items() if isinstance(v, (int, float)) and any(tok in k.lower() for tok in ("period", "window", "lookback"))]
+        return max(candidates) + 50 if candidates else 250
 
 
 def _pip_size_from_mt5(symbol: str) -> float:
-    try:
-        import MetaTrader5 as mt5
-        info = mt5.symbol_info(symbol)
-        if info is not None:
-            digits = getattr(info, 'digits', None)
-            point = getattr(info, 'point', None)
-            if point and digits is not None:
-                if digits in (3, 5):
-                    return point * 10.0
-                return float(point)
-    except Exception:
-        pass
+    mt5 = _try_import_mt5()
+    if mt5 is not None:
+        try:
+            info = mt5.symbol_info(symbol)
+            if info is not None:
+                digits = getattr(info, 'digits', None)
+                point = getattr(info, 'point', None)
+                if point and digits is not None:
+                    if digits in (3, 5):
+                        return point * 10.0
+                    return float(point)
+        except Exception:
+            pass
     return pip_size(symbol)
 
 
@@ -86,18 +104,76 @@ def theoretical_max_lots_from_margin_budget(margin_budget: float, leverage: floa
 
 
 def _server_time_utc(symbol: str) -> datetime:
+    mt5 = _try_import_mt5()
+    if mt5 is not None:
+        try:
+            t = mt5.symbol_info_tick(symbol)
+            if t is not None:
+                d = t._asdict()
+                if d.get('time_msc'):
+                    return datetime.fromtimestamp(d['time_msc']/1000.0, tz=timezone.utc)
+                if d.get('time'):
+                    return datetime.fromtimestamp(d['time'], tz=timezone.utc)
+        except Exception:
+            pass
+    return datetime.now(timezone.utc)
+
+
+class ReplayAdapter:
+    """Adapter that emulates MT5Adapter over historical data for replay mode."""
+    def __init__(self, symbol: str, timeframe: str, data: pd.DataFrame, spread_pips: float = 0.2):
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.data = data
+        self.spread_pips = float(spread_pips or 0.0)
+        self.idx = 0
+        self.open_positions = []
+
+    def set_index(self, i: int):
+        self.idx = max(0, min(int(i), len(self.data)-1))
+
+    def ensure_symbol(self, symbol: str) -> bool:
+        return True
+
+    def fetch_recent_bars(self, symbol: str, timeframe: str, count: int) -> pd.DataFrame:
+        end = min(self.idx + 1, len(self.data))
+        start = max(0, end - int(count))
+        return self.data.iloc[start:end].copy()
+
+    def current_tick(self, symbol: str) -> Dict[str, Any]:
+        pip = _pip_size_from_mt5(symbol)
+        close = float(self.data['Close'].iloc[self.idx])
+        spread_px = self.spread_pips * pip
+        ask = close + spread_px/2.0
+        bid = close - spread_px/2.0
+        return {'bid': bid, 'ask': ask}
+
+    def positions_get(self, symbol: str):
+        return self.open_positions
+
+    def send_market_order(self, **order_request) -> Dict[str, Any]:
+        return {'retcode': 10009, 'order': int(time.time()*1000) % 1000000, 'deal': int(time.time()*1000) % 1000000, **order_request}
+
+
+def _replay_log(runtime: Dict[str, Any], msg: str, kind: str = 'info') -> None:
+    """Log to terminal (minimal by default) and append to runtime.log_path.
+    Terminal logging respects runtime['console_log']:
+      - 'minimal' (default): prints only start/progress/end/warning/error
+      - 'verbose': prints everything
+    File logging always writes all messages.
+    """
+    console_level = str(runtime.get('console_log', 'minimal') or 'minimal').lower()
+    print_to_console = (console_level == 'verbose') or (console_level == 'minimal' and kind in ('start','progress','end','warning','error'))
+    if print_to_console:
+        print(msg)
     try:
-        import MetaTrader5 as mt5
-        t = mt5.symbol_info_tick(symbol)
-        if t is not None:
-            d = t._asdict()
-            if d.get('time_msc'):
-                return datetime.fromtimestamp(d['time_msc']/1000.0, tz=timezone.utc)
-            if d.get('time'):
-                return datetime.fromtimestamp(d['time'], tz=timezone.utc)
+        log_path = runtime.get('log_path', 'logs/trading_bot.log')
+        p = Path(log_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open('a', encoding='utf-8') as f:
+            f.write(msg + "\n")
     except Exception:
         pass
-    return datetime.now(timezone.utc)
 
 
 def _append_trade_journal(csv_path: Path, row: Dict[str, Any]) -> None:
@@ -157,8 +233,10 @@ def run_strategy_once(
     dry_run: bool = False,
     max_positions: int | None = None,
     last_closed_bar_ts: pd.Timestamp | None = None,
+    apply_param_rounding: bool = False,
+    round_params_decimals: int | None = None,
 ):
-    import MetaTrader5 as mt5
+    mt5 = _try_import_mt5()
     with open(strategy_cfg_path, 'r') as f:
         strat_yaml = yaml.safe_load(f)
     strat_info = strat_yaml['strategy']
@@ -188,6 +266,21 @@ def run_strategy_once(
                 if v >= 1.0:
                     params[k] = v * pips_scale
 
+    # Optional rounding to align with evaluator behavior
+    if apply_param_rounding and isinstance(round_params_decimals, (int, float)):
+        def _round_numeric_params(p: Dict[str, Any], decimals: int = 2) -> Dict[str, Any]:
+            out: Dict[str, Any] = {}
+            for kk, vv in p.items():
+                if isinstance(vv, bool) or isinstance(vv, int):
+                    out[kk] = vv
+                else:
+                    try:
+                        out[kk] = round(float(vv), int(decimals))
+                    except Exception:
+                        out[kk] = vv
+            return out
+        params = _round_numeric_params(params, int(round_params_decimals))
+
     mod = __import__(module_path, fromlist=[strategy_class_name])
     StrategyCls = getattr(mod, strategy_class_name)
 
@@ -205,6 +298,14 @@ def run_strategy_once(
     if action not in ('BUY','SELL') or not sl_pips or not tp_pips:
         return {'status': 'no_signal', 'closed_bar_ts': closed_ts}
 
+    # Enforce minimum stop distance in pips (config-level guard similar to backtester)
+    try:
+        min_stop_pips_cfg = float(risk_cfg.get('min_stop_pips', 0) or 0)
+    except Exception:
+        min_stop_pips_cfg = 0.0
+    if min_stop_pips_cfg and float(sl_pips) < min_stop_pips_cfg:
+        return {'status': 'min_stop_violation', 'closed_bar_ts': closed_ts}
+
     tick = mt5a.current_tick(symbol)
     bid = tick['bid']; ask = tick['ask']
     spread = ask - bid
@@ -217,7 +318,12 @@ def run_strategy_once(
         sl_price = entry_price + sl_pips * pip
         tp_price = entry_price - tp_pips * pip
 
-    ai = mt5.account_info()
+    ai = None
+    try:
+        if mt5 is not None:
+            ai = mt5.account_info()
+    except Exception:
+        ai = None
     balance = global_cfg['account_balance_placeholder']
     free_margin = None
     if ai is not None:
@@ -227,9 +333,10 @@ def run_strategy_once(
     # Position limit per symbol
     if max_positions is not None and max_positions>0:
         try:
-            open_pos = mt5.positions_get(symbol=symbol)
-            if open_pos is not None and len(open_pos) >= max_positions:
-                return {'status':'position_limit','closed_bar_ts':closed_ts}
+            if mt5 is not None:
+                open_pos = mt5.positions_get(symbol=symbol)
+                if open_pos is not None and len(open_pos) >= max_positions:
+                    return {'status':'position_limit','closed_bar_ts':closed_ts}
         except Exception:
             pass
     
@@ -238,17 +345,10 @@ def run_strategy_once(
     cap_candidates = []
     if free_margin is not None:
         cap_candidates.append(theoretical_max_lots_from_free_margin(free_margin, lev, entry_price))
-    # Use max_concurrent_positions primarily; fall back to legacy max_allowed_open_trades
-    mcp = risk_cfg.get('max_concurrent_positions')
-    maot = risk_cfg.get('max_allowed_open_trades') if not mcp else None
-    per_trade_divisor = None
-    if mcp and isinstance(mcp, (int, float)) and mcp > 0:
-        per_trade_divisor = float(mcp)
-    elif maot and isinstance(maot, (int, float)) and maot > 0:
-        per_trade_divisor = float(maot)
-    if per_trade_divisor:
+    maot = risk_cfg.get('max_allowed_open_trades')
+    if maot:
         try:
-            per_trade_budget = balance / per_trade_divisor
+            per_trade_budget = balance / float(maot)
             effective_budget = min(per_trade_budget, free_margin) if free_margin is not None else per_trade_budget
             cap_candidates.append(theoretical_max_lots_from_margin_budget(effective_budget, lev, entry_price))
         except Exception:
@@ -263,27 +363,18 @@ def run_strategy_once(
     if raw_lot <= 0:
         return {'status':'invalid_lot','closed_bar_ts':closed_ts}
     lot = min(raw_lot, theoretical_cap)
-
-    # Apply lot sizing policies: min_size, lot_step, and optional hard max_lot_size
-    min_size = float(risk_cfg.get('min_size', 0.01) or 0.01)
-    lot_step = float(risk_cfg.get('lot_step', 0.01) or 0.01)
-    max_lot_size = float(risk_cfg.get('max_lot_size', 0.0) or 0.0)
-
-    if lot_step and lot_step > 0:
-        lot = (lot // lot_step) * lot_step
-    else:
-        # Default to 0.01 step if unspecified
-        lot = math.floor(lot*100)/100.0
-    if max_lot_size and max_lot_size > 0 and lot > max_lot_size:
-        lot = max_lot_size
-    if lot < min_size:
+    if lot < 0.01:
+        return {'status':'lot_below_min','raw_lot':raw_lot,'cap':theoretical_cap,'closed_bar_ts':closed_ts,'entry':entry_price,'sl':sl_price,'tp':tp_price,'balance':balance,'leverage':lev,'spread':spread,'action':action}
+    lot = math.floor(lot*100)/100.0
+    if lot < 0.01:
         return {'status':'lot_below_min','raw_lot':raw_lot,'cap':theoretical_cap,'closed_bar_ts':closed_ts,'entry':entry_price,'sl':sl_price,'tp':tp_price,'balance':balance,'leverage':lev,'spread':spread,'action':action}
 
     # Margin requirement check
     margin_required = None
     try:
-        mt5_type = mt5.ORDER_TYPE_BUY if action=='BUY' else mt5.ORDER_TYPE_SELL
-        margin_required = mt5.order_calc_margin(mt5_type, symbol, lot, entry_price)
+        if mt5 is not None:
+            mt5_type = mt5.ORDER_TYPE_BUY if action=='BUY' else mt5.ORDER_TYPE_SELL
+            margin_required = mt5.order_calc_margin(mt5_type, symbol, lot, entry_price)
     except Exception:
         pass
     if margin_required is None:
@@ -322,9 +413,486 @@ def run_strategy_once(
     return {'status':status,'order':result,'lot':lot,'action':action,'entry':entry_price,'sl':sl_price,'tp':tp_price,'spread':spread,'closed_bar_ts':closed_ts,'balance':balance,'free_margin':free_margin,'margin_required':margin_required}
 
 
+def _run_replay_mode(bot_cfg, args):
+    """Run trading bot in replay mode over historical data without MT5."""
+    account = bot_cfg.get('account', {})
+    general = bot_cfg.get('general', {})
+    runtime = bot_cfg.get('runtime', {})
+    strategies = [s for s in bot_cfg['strategies'] if s.get('enabled')]
+    if not strategies:
+        _replay_log(runtime, 'No enabled strategies for replay.', kind='warning')
+        return
+
+    apply_round = bool(runtime.get('apply_param_rounding', False))
+    round_dec = int(runtime.get('round_params_decimals', 2))
+    starting_balance = float(account.get('starting_balance', 100.0) or 100.0)
+
+    def _load_data_with_aliases(symbol: str, timeframe: str) -> pd.DataFrame:
+        # Try alias mapping from runtime if present
+        aliases: Dict[str,str] = runtime.get('symbol_aliases', {}) or {}
+        tried = set()
+        candidates = []
+        base = aliases.get(symbol, symbol)
+        candidates.append(base)
+        # Common variations between broker symbols and local data
+        if base.endswith('m'):
+            candidates.append(base[:-1])
+        if not base.startswith('frx'):
+            candidates.append('frx' + base)
+        if base.endswith('m') and not base.startswith('frx'):
+            candidates.append('frx' + base[:-1])
+        # Ensure uniqueness and non-empty
+        for sym in [s for s in candidates if s and s not in tried]:
+            tried.add(sym)
+            try:
+                return load_data(sym, timeframe)
+            except Exception:
+                continue
+        # Fallback raise using original
+        return load_data(symbol, timeframe)
+
+    for strat in strategies:
+        symbol = strat.get('symbol') or general.get('default_symbol') or 'EURUSD'
+        timeframe = strat.get('timeframe') or general.get('default_timeframe') or '15m'
+        # Load data, trying common alias variations
+        _replay_log(runtime, f"Replay: loading data for {symbol} {timeframe}...", kind='start')
+        data = _load_data_with_aliases(symbol, timeframe)
+        # Apply date filters using tz-aware timestamps
+        try:
+            start_ts = pd.to_datetime(args.replay_start, utc=True) if args.replay_start else None
+            end_ts = pd.to_datetime(args.replay_end, utc=True) if args.replay_end else None
+        except Exception:
+            start_ts = None; end_ts = None
+        filtered = data
+        if start_ts is not None:
+            filtered = filtered.loc[start_ts:]
+        if end_ts is not None:
+            filtered = filtered.loc[:end_ts]
+        if len(filtered) < 100:
+            _replay_log(runtime, f"Replay: insufficient data for requested range ({symbol} {timeframe}). Available: {data.index[0].isoformat()} .. {data.index[-1].isoformat()}", kind='warning')
+            continue
+        data = filtered
+
+        adapter = ReplayAdapter(symbol, timeframe, data, spread_pips=float(account.get('spread_pips',0.2) or 0.2))
+        # Load strategy YAML and params
+        try:
+            with open(strat['strategy_config'],'r') as f:
+                strat_yaml = yaml.safe_load(f)
+        except Exception as e:
+            _replay_log(runtime, f"Replay: failed to load strategy YAML: {e}")
+            continue
+        params = strat_yaml.get('best_params') or strat_yaml.get('parameters_best')
+        if not isinstance(params, dict) or not params:
+            _replay_log(runtime, 'Replay: no best_params found; skipping.')
+            continue
+        if apply_round:
+            def _round_numeric_params(p: Dict[str, Any], decimals: int = 2) -> Dict[str, Any]:
+                out: Dict[str, Any] = {}
+                for kk, vv in p.items():
+                    if isinstance(vv, bool) or isinstance(vv, int):
+                        out[kk] = vv
+                    else:
+                        try:
+                            out[kk] = round(float(vv), int(decimals))
+                        except Exception:
+                            out[kk] = vv
+                return out
+            params = _round_numeric_params(params, round_dec)
+
+        # Parity mode: use evaluator's backtest function for identical modeling
+        if getattr(args, 'replay_model', 'parity') == 'parity':
+            try:
+                mod_path = strat_yaml['strategy'].get('module', 'functions.strategies')
+                cls_name = strat_yaml['strategy']['class']
+                mod = __import__(mod_path, fromlist=[cls_name])
+                StrategyCls = getattr(mod, cls_name)
+            except Exception as e:
+                _replay_log(runtime, f"Replay parity: failed to load strategy class: {e}", kind='error')
+                continue
+
+            max_lb = infer_max_lookback(params)
+            res = backtest_strategy(
+                data=data,
+                symbol=symbol,
+                strategy_cls=StrategyCls,
+                params=params,
+                account_cfg=account,
+                max_lookback=max_lb,
+                progress=None,
+            )
+
+            payload = {
+                'strategy': cls_name,
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'param_source': 'yaml',
+                'params': params,
+                'metrics': {
+                    'starting_balance': res.get('starting_balance'),
+                    'ending_balance': res.get('ending_balance'),
+                    'total_return_pct': res.get('total_return_pct'),
+                    'sharpe': res.get('sharpe'),
+                    'max_drawdown_pct': res.get('max_drawdown_pct'),
+                    'trades': res.get('trades'),
+                    'win_rate_pct': res.get('win_rate_pct'),
+                },
+                'equity_curve': res.get('equity_curve', []),
+                'trades_detail': res.get('trades_detail', []),
+                'signal_debug': res.get('signal_debug', []),
+            }
+
+            out_path = args.replay_output or os.path.join(runtime.get('results_root','results'), to_snake(strat_yaml['strategy'].get('results_dir') or strat_yaml['strategy']['class']), 'replay', 'full_dataset_backtest_bot.json')
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(out_path, 'w') as f:
+                json.dump(payload, f, indent=2)
+            _replay_log(runtime, f"Replay saved to {out_path}", kind='end')
+            # Next strategy
+            continue
+
+        # Parity_bot mode: run bot-style loop but apply the exact backtester rules
+        if getattr(args, 'replay_model', 'parity') == 'parity_bot':
+            try:
+                mod_path = strat_yaml['strategy'].get('module', 'functions.strategies')
+                cls_name = strat_yaml['strategy']['class']
+                mod = __import__(mod_path, fromlist=[cls_name])
+                StrategyCls = getattr(mod, cls_name)
+            except Exception as e:
+                _replay_log(runtime, f"Replay parity_bot: failed to load strategy class: {e}", kind='error')
+                continue
+
+            # Account controls
+            starting_balance = float(account.get('starting_balance', 10000.0) or 10000.0)
+            risk_frac = float(account.get('risk_per_trade', 0.01) or 0.01)
+            spread_pips = float(account.get('spread_pips', 0.0) or 0.0)
+            commission = float(account.get('commission_per_trade', 0.0) or 0.0)
+            leverage = float(account.get('leverage', 0.0) or 0.0)
+            slippage_pips = float(account.get('slippage_pips', 0.0) or 0.0)
+            min_stop_pips = float(account.get('min_stop_pips', 0.0) or 0.0)
+            min_size = float(account.get('min_size', 0.0) or 0.0)
+            lot_step = float(account.get('lot_step', 0.0) or 0.0)
+            max_lot_size = float(account.get('max_lot_size', 0.0) or 0.0)
+            contract_size = float(account.get('contract_size', 100000.0) or 100000.0)
+            equity_rounding = float(account.get('equity_rounding', 0.0) or 0.0)
+            # Entry cooldown controls (align with backtester)
+            cooldown_bars_after_exit = int(account.get('cooldown_bars_after_exit', 0) or 0)
+            no_same_bar_reentry = bool(account.get('no_same_bar_reentry', False))
+
+            pip = pip_size(symbol)
+            spread_price = pips_to_price(spread_pips, symbol)
+            slippage_price = pips_to_price(slippage_pips, symbol)
+            pvp_override = account.get('pip_value_per_lot')
+            pip_value_per_lot = float(pvp_override) if pvp_override is not None else contract_size * pip
+
+            warmup = infer_max_lookback(params)
+            equity = starting_balance
+            peak_equity = starting_balance
+            equity_curve = []
+            open_positions = []  # list of dicts
+            trades_detail = []
+            last_exit_bar_index = None
+
+            idx = data.index
+            for i in range(warmup, len(data)-1):
+                now = idx[i]
+                nxt = idx[i+1]
+                window = data.iloc[:i+1]
+                equity_curve.append({'time': now.isoformat(), 'equity': equity})
+
+                # Exit evaluation first, SL before TP
+                if open_positions:
+                    h = float(data.iloc[i+1]['High'])
+                    l = float(data.iloc[i+1]['Low'])
+                    for pos in list(open_positions):
+                        exit_price = None
+                        if pos['direction'] == 'BUY':
+                            if l <= pos['stop_price']:
+                                exit_price = pos['stop_price'] - spread_price * 0.5 - slippage_price
+                                exit_reason = 'SL'
+                            elif h >= pos['tp_price']:
+                                exit_price = pos['tp_price'] - spread_price * 0.5 - slippage_price
+                                exit_reason = 'TP'
+                        else:  # SELL
+                            if h >= pos['stop_price']:
+                                exit_price = pos['stop_price'] + spread_price * 0.5 + slippage_price
+                                exit_reason = 'SL'
+                            elif l <= pos['tp_price']:
+                                exit_price = pos['tp_price'] + spread_price * 0.5 + slippage_price
+                                exit_reason = 'TP'
+                        if exit_price is not None:
+                            direction_mult = 1.0 if pos['direction'] == 'BUY' else -1.0
+                            price_diff = (exit_price - pos['entry_price'])
+                            pips_signed = (price_diff / pip) * direction_mult if pip > 0 else 0.0
+                            pnl = pips_signed * pip_value_per_lot * pos['size']
+                            pnl -= commission
+                            equity += pnl
+                            if equity_rounding and equity_rounding > 0:
+                                equity = round(equity / equity_rounding) * equity_rounding
+                            trades_detail.append({
+                                'direction': pos['direction'],
+                                'entry_time': pos['entry_time'].isoformat(),
+                                'entry_price': pos['entry_price'],
+                                'stop_price': pos['stop_price'],
+                                'take_profit_price': pos['tp_price'],
+                                'exit_time': nxt.isoformat(),
+                                'exit_price': float(exit_price),
+                                'size': float(pos['size']),
+                                'pnl': pnl,
+                                'equity_after': equity,
+                                'exit_reason': exit_reason,
+                            })
+                            open_positions.remove(pos)
+                            last_exit_bar_index = i + 1
+
+                # Open new trade using backtester rules
+                # Apply optional re-entry cooldown
+                if no_same_bar_reentry and last_exit_bar_index is not None and last_exit_bar_index == i + 1:
+                    continue
+                if cooldown_bars_after_exit and last_exit_bar_index is not None:
+                    if (i + 1) - last_exit_bar_index < cooldown_bars_after_exit:
+                        continue
+                strat = StrategyCls(window, params)
+                action, sl_pips, tp_pips = strat.generate_signals()
+                if action in ('BUY','SELL') and sl_pips is not None and tp_pips is not None:
+                    # Minimum stop distance guard
+                    if min_stop_pips and float(sl_pips) < min_stop_pips:
+                        continue
+                    entry_open = float(data.iloc[i+1]['Open'])
+                    if action == 'BUY':
+                        entry_price = entry_open + spread_price * 0.5 + slippage_price
+                        stop_price = entry_price - pips_to_price(sl_pips, symbol)
+                        tp_price = entry_price + pips_to_price(tp_pips, symbol)
+                    else:
+                        entry_price = entry_open - spread_price * 0.5 - slippage_price
+                        stop_price = entry_price + pips_to_price(sl_pips, symbol)
+                        tp_price = entry_price - pips_to_price(tp_pips, symbol)
+
+                    stop_dist = abs(entry_price - stop_price)
+                    if stop_dist <= 0:
+                        continue
+                    risk_amount = equity * risk_frac
+                    stop_pips_eff = float(sl_pips)
+                    size = max(risk_amount / (stop_pips_eff * pip_value_per_lot), 0.0)
+                    size_pre_cap = size
+                    if leverage and leverage > 0 and entry_price > 0:
+                        allowable = (equity * leverage) / (contract_size * entry_price)
+                        if allowable <= 0:
+                            continue
+                        size = min(size, allowable)
+                    if lot_step and lot_step > 0:
+                        size = (size // lot_step) * lot_step
+                    if max_lot_size and max_lot_size > 0 and size > max_lot_size:
+                        size = max_lot_size
+                    if min_size and size < min_size:
+                        # Simple skip (backtester attempts soft rounding tolerance; omitted for brevity)
+                        continue
+
+                    equity -= commission
+                    if equity_rounding and equity_rounding > 0:
+                        equity = round(equity / equity_rounding) * equity_rounding
+                    open_positions.append({
+                        'direction': action,
+                        'entry_time': nxt,
+                        'entry_price': float(entry_price),
+                        'stop_price': float(stop_price),
+                        'tp_price': float(tp_price),
+                        'size': float(size),
+                    })
+
+            # Final equity point
+            if len(data) > 0:
+                equity_curve.append({'time': data.index[-1].isoformat(), 'equity': equity})
+
+            # Metrics
+            trades = len(trades_detail)
+            wins = sum(1 for t in trades_detail if (t.get('pnl') or 0) > 0)
+            win_rate_pct = (wins / trades) * 100.0 if trades else 0.0
+            total_return_pct = ((equity - starting_balance) / starting_balance) * 100.0 if starting_balance else 0.0
+            # Approximate max drawdown
+            eq_vals = [pt['equity'] for pt in equity_curve]
+            peaks = []
+            max_dd = 0.0
+            for v in eq_vals:
+                peaks.append(max(v, peaks[-1] if peaks else v))
+                dd = (peaks[-1] - v) / peaks[-1] if peaks[-1] > 0 else 0.0
+                max_dd = max(max_dd, dd * 100.0)
+
+            payload = {
+                'strategy': cls_name,
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'param_source': 'yaml',
+                'params': params,
+                'metrics': {
+                    'starting_balance': starting_balance,
+                    'ending_balance': equity,
+                    'total_return_pct': total_return_pct,
+                    'sharpe': 0.0,
+                    'max_drawdown_pct': max_dd,
+                    'trades': trades,
+                    'win_rate_pct': win_rate_pct,
+                },
+                'equity_curve': equity_curve,
+                'trades_detail': trades_detail,
+            }
+
+            out_path = args.replay_output or os.path.join(runtime.get('results_root','results'), to_snake(strat_yaml['strategy'].get('results_dir') or strat_yaml['strategy']['class']), 'replay', 'full_dataset_backtest_bot.json')
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(out_path, 'w') as f:
+                json.dump(payload, f, indent=2)
+            _replay_log(runtime, f"Replay saved to {out_path}", kind='end')
+            continue
+
+        balance = starting_balance
+        equity_curve = []
+        trades_detail = []
+        open_positions = []
+        last_bar_seen = None
+        warmup = infer_max_lookback(params)
+        _replay_log(runtime, f"Replay: starting loop warmup={warmup}, bars={len(data)} from {data.index[0].isoformat()} to {data.index[-1].isoformat()}", kind='start')
+        total_iters = max(warmup, 1)
+        total_iters = len(data) - 1 - total_iters
+        progress_step = max(total_iters // 20, 1)  # ~5% steps
+        for i in range(max(warmup, 1), len(data)-1):
+            adapter.set_index(i)
+            res = run_strategy_once(
+                strat['strategy_config'],
+                {'symbol': symbol, **strat},
+                {'general': {'default_symbol': symbol, 'default_timeframe': timeframe}, 'magic_number': account.get('magic_number',123456), 'account_balance_placeholder': starting_balance},
+                adapter,
+                account,
+                dry_run=False,
+                max_positions=account.get('max_concurrent_positions'),
+                last_closed_bar_ts=last_bar_seen,
+                apply_param_rounding=apply_round,
+                round_params_decimals=round_dec,
+            )
+            if 'closed_bar_ts' in res and res['status'] not in ('no_data',):
+                last_bar_seen = res['closed_bar_ts']
+
+            if res.get('status') == 'sent':
+                open_positions.append({
+                    'action': res.get('action'),
+                    'entry': float(res.get('entry')),
+                    'sl': float(res.get('sl')),
+                    'tp': float(res.get('tp')),
+                    'lot': float(res.get('lot')),
+                    'ts': data.index[i],
+                })
+                _replay_log(runtime, f"Replay: SENT {res.get('action')} lot={res.get('lot')} entry={round(float(res.get('entry')),5)} sl={round(float(res.get('sl')),5)} tp={round(float(res.get('tp')),5)} ts={data.index[i].isoformat()}", kind='debug')
+
+            # Process exits on next bar (set-and-forget)
+            bar_next = data.iloc[i+1]
+            hi = float(bar_next['High']); lo = float(bar_next['Low'])
+            pip = _pip_size_from_mt5(symbol)
+            remaining = []
+            for pos in open_positions:
+                exit_price = None
+                exit_reason = None
+                if pos['action'] == 'BUY':
+                    sl_hit = lo <= pos['sl']
+                    tp_hit = hi >= pos['tp']
+                    if sl_hit:
+                        exit_price = pos['sl']; exit_reason = 'SL'
+                    elif tp_hit:
+                        exit_price = pos['tp']; exit_reason = 'TP'
+                else:
+                    sl_hit = hi >= pos['sl']
+                    tp_hit = lo <= pos['tp']
+                    if sl_hit:
+                        exit_price = pos['sl']; exit_reason = 'SL'
+                    elif tp_hit:
+                        exit_price = pos['tp']; exit_reason = 'TP'
+                if exit_price is None:
+                    remaining.append(pos)
+                else:
+                    pips = (exit_price - pos['entry'])/pip
+                    if pos['action'] == 'SELL':
+                        pips = -pips
+                    pnl = pips * float(account.get('pip_value_per_lot',10.0) or 10.0) * pos['lot']
+                    balance += pnl
+                    trades_detail.append({
+                        'entry_time': pos['ts'].isoformat(),
+                        'exit_time': bar_next.name.isoformat(),
+                        'entry_price': pos['entry'],
+                        'exit_price': exit_price,
+                        'size_lot': pos['lot'],
+                        'action': pos['action'],
+                        'pnl_currency': pnl,
+                        'exit_reason': exit_reason,
+                    })
+                    _replay_log(runtime, f"Replay: EXIT {pos['action']} {exit_reason} pnl={round(pnl,2)} bal={round(balance,2)} entry={round(pos['entry'],5)} exit={round(exit_price,5)} ts={bar_next.name.isoformat()}", kind='debug')
+            open_positions = remaining
+            equity_curve.append({'time': bar_next.name.isoformat(), 'equity': round(balance,2)})
+
+            if (i - max(warmup, 1)) % progress_step == 0:
+                done = (i - max(warmup, 1))
+                pct = round((done / max(total_iters, 1)) * 100.0, 1)
+                _replay_log(runtime, f"Replay: progress {pct}% ({done}/{total_iters}) bal={round(balance,2)} open_positions={len(open_positions)}", kind='progress')
+
+        # Close remaining at final close
+        if open_positions:
+            last_bar = data.iloc[-1]
+            close_last = float(last_bar['Close']); pip = _pip_size_from_mt5(symbol)
+            for pos in open_positions:
+                pips = (close_last - pos['entry'])/pip
+                if pos['action'] == 'SELL':
+                    pips = -pips
+                pnl = pips * float(account.get('pip_value_per_lot',10.0) or 10.0) * pos['lot']
+                balance += pnl
+                trades_detail.append({
+                    'entry_time': pos['ts'].isoformat(),
+                    'exit_time': last_bar.name.isoformat(),
+                    'entry_price': pos['entry'],
+                    'exit_price': close_last,
+                    'size_lot': pos['lot'],
+                    'action': pos['action'],
+                    'pnl_currency': pnl,
+                    'exit_reason': 'close_final',
+                })
+            equity_curve.append({'time': last_bar.name.isoformat(), 'equity': round(balance,2)})
+
+        total_return_pct = ((balance - starting_balance)/starting_balance)*100.0
+        trades = len(trades_detail)
+        wins = sum(1 for t in trades_detail if t['pnl_currency'] > 0)
+        win_rate_pct = (wins/trades)*100.0 if trades else 0.0
+        # rudimentary max DD
+        eq_vals = [pt['equity'] for pt in equity_curve]
+        peaks = []
+        max_dd = 0.0
+        for v in eq_vals:
+            peaks.append(max(v, peaks[-1] if peaks else v))
+            dd = (peaks[-1]-v)/peaks[-1] if peaks[-1]>0 else 0.0
+            max_dd = max(max_dd, dd*100.0)
+
+        payload = {
+            'strategy': strat_yaml['strategy']['class'],
+            'symbol': symbol,
+            'timeframe': timeframe,
+            'param_source': 'yaml',
+            'params': params,
+            'metrics': {
+                'starting_balance': starting_balance,
+                'ending_balance': balance,
+                'total_return_pct': total_return_pct,
+                'sharpe': 0.0,
+                'max_drawdown_pct': max_dd,
+                'trades': trades,
+                'win_rate_pct': win_rate_pct,
+            },
+            'equity_curve': equity_curve,
+            'trades_detail': trades_detail,
+        }
+
+        out_path = args.replay_output or os.path.join(runtime.get('results_root','results'), to_snake(strat_yaml['strategy'].get('results_dir') or strat_yaml['strategy']['class']), 'replay', 'full_dataset_backtest_bot.json')
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, 'w') as f:
+            json.dump(payload, f, indent=2)
+        _replay_log(runtime, f"Replay saved to {out_path}", kind='end')
+
 def main():
     parser = argparse.ArgumentParser(description='Live trading bot (enhanced)')
     parser.add_argument('--config', default='configs/trading_bot_config.yaml')
+    parser.add_argument('--mode', choices=['live','replay'], default='live', help='Run live against MT5 or replay over historical data without MT5')
     parser.add_argument('--once', action='store_true', help='Run one pass per enabled strategy then exit')
     parser.add_argument('--dry-run', action='store_true', help='Do not send orders, only show intended actions')
     parser.add_argument('--skip-start', action='store_true', help='Skip processing of the current last closed bar; wait for next close')
@@ -337,19 +905,29 @@ def main():
     parser.add_argument('--test-symbol', help='Override symbol for test trade')
     parser.add_argument('--test-dry-run', action='store_true', help='Compute test trade, do not send order')
     parser.add_argument('--test-auto-adjust', action='store_true', help='Automatically widen SL/TP to satisfy broker minimum stop distance')
+    # Replay flags
+    parser.add_argument('--replay-start', help='Start timestamp/date for replay (ISO, e.g., 2025-01-01)')
+    parser.add_argument('--replay-end', help='End timestamp/date for replay (ISO)')
+    parser.add_argument('--replay-output', help='Output JSON path for replay results (default under results/<strategy>/replay/)')
+    parser.add_argument('--replay-model', choices=['parity','parity_bot','simple'], default='parity', help='Modeling for replay: parity uses evaluator backtest path; parity_bot uses bot loop with backtester rules; simple uses adapter tick simulation')
     args = parser.parse_args()
 
     load_dotenv()
     with open(args.config,'r') as f:
         bot_cfg = yaml.safe_load(f)
 
+    # Align defaults with main_config-style structure if present; fallback to first strategy
+    general_cfg = bot_cfg.get('general', {})
+    default_symbol = general_cfg.get('default_symbol') or bot_cfg['strategies'][0].get('symbol','EURUSD')
+    default_timeframe = general_cfg.get('default_timeframe') or bot_cfg['strategies'][0].get('timeframe','15m')
+
     general_defaults = {
         'general': {
-            'default_symbol': bot_cfg['strategies'][0].get('symbol','EURUSD'),
-            'default_timeframe': bot_cfg['strategies'][0].get('timeframe','15m'),
+            'default_symbol': default_symbol,
+            'default_timeframe': default_timeframe,
         },
-        'bot_results_root': bot_cfg['runtime']['results_root'],
-        'magic_number': bot_cfg['account']['magic_number'],
+        'bot_results_root': bot_cfg.get('runtime',{}).get('results_root','results'),
+        'magic_number': bot_cfg['account'].get('magic_number', 123456),
         'account_balance_placeholder': 100.0,
     }
 
@@ -375,12 +953,18 @@ def main():
         except Exception:
             pass
 
+    if args.mode == 'replay':
+        _run_replay_mode(bot_cfg, args)
+        return
     mt5a = MT5Adapter(login=login, password=password, server=server)
     if not mt5a.initialize():
         log_line('Failed to initialize MT5'); return
 
     try:
-        risk_cfg = bot_cfg['risk']
+        # Canonical: use account keys (aligned with backtester). Risk overrides still supported.
+        account_cfg = bot_cfg.get('account', {})
+        risk_overrides = bot_cfg.get('risk', {})
+        risk_cfg = {**account_cfg, **risk_overrides}
         strategies = [s for s in bot_cfg['strategies'] if s.get('enabled')]
         if not strategies:
             log_line('No enabled strategies.'); return
@@ -418,6 +1002,21 @@ def main():
                         v=float(params[k])
                         if v >= 1.0:
                             params[k]=v*pips_scale
+            # Optional: round numeric params to align with evaluator behavior
+            rp = bot_cfg.get('runtime',{}).get('round_params_decimals') if bot_cfg.get('runtime') else None
+            if bot_cfg.get('runtime',{}).get('apply_param_rounding', False) and isinstance(rp,(int,float)):
+                def _round_numeric_params(p: Dict[str, Any], decimals: int = 2) -> Dict[str, Any]:
+                    out: Dict[str, Any] = {}
+                    for kk, vv in p.items():
+                        if isinstance(vv, bool) or isinstance(vv, int):
+                            out[kk] = vv
+                        else:
+                            try:
+                                out[kk] = round(float(vv), int(decimals))
+                            except Exception:
+                                out[kk] = vv
+                    return out
+                params = _round_numeric_params(params, int(rp))
             # Overrides
             if args.test_sl is not None:
                 params['stop_loss_pips']=float(args.test_sl)
@@ -431,7 +1030,7 @@ def main():
             symbol_tt = args.test_symbol or chosen.get('symbol') or bot_cfg['strategies'][0].get('symbol') or 'EURUSD'
             timeframe_tt = chosen.get('timeframe') or bot_cfg['strategies'][0].get('timeframe') or '15m'
             mt5a.ensure_symbol(symbol_tt)
-            import MetaTrader5 as mt5
+            mt5 = _try_import_mt5()
             try:
                 tick = mt5a.current_tick(symbol_tt)
             except Exception:
@@ -494,7 +1093,7 @@ def main():
             def _adjust_level(level_price: float, is_sl: bool) -> float:
                 # Round to symbol digits
                 try:
-                    info = mt5.symbol_info(symbol_tt)
+                    info = mt5.symbol_info(symbol_tt) if mt5 is not None else None
                     digits = getattr(info,'digits',None)
                     if digits is not None:
                         return round(level_price, digits)
@@ -536,7 +1135,12 @@ def main():
                     else:
                         log_line("[TEST] Use --test-auto-adjust or increase stop_loss_pips / take_profit_pips.")
             # Lot sizing (reuse logic subset from run_strategy_once)
-            ai = mt5.account_info()
+            ai = None
+            try:
+                if mt5 is not None:
+                    ai = mt5.account_info()
+            except Exception:
+                ai = None
             balance = general_defaults['account_balance_placeholder']
             free_margin = None
             if ai is not None:
@@ -606,8 +1210,13 @@ def main():
             return
 
         # Header
-        import MetaTrader5 as mt5
-        ai = mt5.account_info()
+        mt5 = _try_import_mt5()
+        ai = None
+        try:
+            if mt5 is not None:
+                ai = mt5.account_info()
+        except Exception:
+            ai = None
         bal = getattr(ai,'balance',None) if ai else None
         eq = getattr(ai,'equity',None) if ai else None
         fm = getattr(ai,'margin_free',None) if ai else None
@@ -644,9 +1253,12 @@ def main():
             intervals = int(mins_since//mins)+1
             next_close = day_start + timedelta(minutes=intervals*mins)
             try:
-                t = mt5.symbol_info_tick(symbol)
-                sp = (t.ask - t.bid) if t else None
-                sp_str = f"{sp:.5f}" if sp is not None else '?'
+                mt5_local = mt5 if 'mt5' in locals() else _try_import_mt5()
+                sp_str = '?'
+                if mt5_local is not None:
+                    t = mt5_local.symbol_info_tick(symbol)
+                    sp = (t.ask - t.bid) if t else None
+                    sp_str = f"{sp:.5f}" if sp is not None else '?'
             except Exception:
                 sp_str='?'
             header.append(f"Strategy: {strat['name']} | Symbol: {symbol} | TF: {timeframe} | Next close: {next_close.strftime('%Y-%m-%d %H:%M:%S')} UTC | Spread: {sp_str}")
@@ -721,7 +1333,13 @@ def main():
             try:
                 now_bal = datetime.now(timezone.utc)
                 if last_balance_poll is None or (now_bal - last_balance_poll).total_seconds() >= 60:
-                    ai_loop = mt5.account_info()
+                    mt5_local = mt5 if 'mt5' in locals() else _try_import_mt5()
+                    ai_loop = None
+                    try:
+                        if mt5_local is not None:
+                            ai_loop = mt5_local.account_info()
+                    except Exception:
+                        ai_loop = None
                     if ai_loop is not None:
                         _append_balance_journal(balance_journal_path, {
                             'ts_utc': now_bal.strftime('%Y-%m-%d %H:%M:%S'),
@@ -759,7 +1377,9 @@ def main():
                         risk_cfg,
                         dry_run=args.dry_run,
                         max_positions=risk_cfg.get('max_concurrent_positions'),
-                        last_closed_bar_ts=last_bar_seen.get(key)
+                        last_closed_bar_ts=last_bar_seen.get(key),
+                        apply_param_rounding=bool(bot_cfg.get('runtime',{}).get('apply_param_rounding', False)),
+                        round_params_decimals=int(bot_cfg.get('runtime',{}).get('round_params_decimals', 2)),
                     )
                     if 'closed_bar_ts' in res and res['status'] not in ('no_data',):
                         last_bar_seen[key] = res['closed_bar_ts']
@@ -857,3 +1477,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+        

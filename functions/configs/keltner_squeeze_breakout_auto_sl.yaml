@@ -1,5 +1,5 @@
 strategy:
-  class: KeltnerSqueezeBreakout
+  class: KeltnerSqueezeBreakoutAutoSl
   module: functions.strategies.keltner_squeeze_breakout_auto_sl
   results_dir: keltner_squeeze_breakout_auto_sl
 name: Keltner Squeeze Breakout (Auto SL)
@@ -26,6 +26,11 @@ parameters:
   - 1.5
   - 2.0
   - 3.0
+  # Minimum stop-loss distance in pips to prevent unrealistically tight SL values
+  min_sl_pips:
+  - 20
+  - 25
+  - 30
 parameters_bayesian:
   period:
   - 1
@@ -37,37 +42,19 @@ parameters_bayesian:
   - 1.1
   - 3.2
   sl_ratio:
-  - 0.5
-  - 2.5
+  - 0.2
+  - 4.0
   tp_ratio:
   - 0.5
-  - 4.0
-# Not sure if I can add comments here but let's see
-parameters_bayesian_15m:
-  period:
-  - 10
+  - 10.0
+  min_sl_pips:
+  - 20
   - 40
-  bb_std:
-  - 1.2
-  - 3.0
-  kc_mult:
-  - 1.0
-  - 2.5
-  take_profit_pips:
-  - 15
-  - 80
-  stop_loss_pips:
-  - 10
-  - 40
-best_params_15m:
-  period: 10
-  bb_std: 1.5
-  kc_mult: 1.5
-  sl_ratio: 1.0
-  tp_ratio: 2.0
 best_params:
-  period: 6
-  bb_std: 1.2
-  kc_mult: 1.7
-  sl_ratio: 1.2
-  tp_ratio: 2.0
+  period: 9
+  bb_std: 1.431498
+  kc_mult: 3.014017
+  sl_ratio: 2.39
+  tp_ratio: 1.47
+  min_sl_pips: 38
+# End of file

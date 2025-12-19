@@ -4,7 +4,8 @@ Fetch historical candle data from local HistData cache and convert to desired fo
 
 Examples:
   python scripts/fetch_data.py --symbol EURUSD --timeframe 1m --days 5
-  python scripts/fetch_data.py --symbol EURUSD --timeframe 5m --startdate 2020-01-01 --enddate 2025-10-10
+  python scripts/fetch_data.py --symbol EURUSD --timeframe 5m --startdate 2025-01-01 --enddate 2025-12-15
+  python scripts/fetch_data.py --symbol EURUSD --timeframe 5m --startdate 2025-11-25 --enddate 2025-12-10
 """
 import argparse
 import io
