@@ -25,6 +25,8 @@ AUTO_YES=0
 # Early stop on parameter stagnation (new)
 PARAM_STAGNATION_PATIENCE=0   # 0 disables
 PARAM_TOLERANCE=0.0           # float tolerance for equality
+# Optional post-optimization validation of top-K trials (0 disables)
+TOP_K_VALIDATION=0
 # Optional filters (comma-separated names). Match against strategy file base (e.g., rsi_strategy)
 # Example: --include "RSIStrategy,ADXTrend" or --exclude "BollingerBreakout,MACDMomentum"
 INCLUDE_STRATS=""
@@ -47,6 +49,7 @@ OPTIONS:
     --param_stagnation_patience N  Early stop if best params unchanged N consecutive trials (default: 0 disabled)
     --param_tolerance F           Float tolerance for param equality (default: 0.0 exact)
     --main_config PATH     Path to main config (default: configs/main_config.yaml)
+    --top_k_validation K   Validate top-K trials on the hold-out set (0 disables; e.g., 5 or 10)
     --include LIST         Comma-separated strategies to include (subset run)
     --exclude LIST         Comma-separated strategies to exclude
     --yes, -y              Skip interactive confirmation prompt (assume yes)
@@ -107,6 +110,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --param_tolerance)
             PARAM_TOLERANCE="$2"
+            shift 2
+            ;;
+        --top_k_validation)
+            TOP_K_VALIDATION="$2"
             shift 2
             ;;
         --main_config)
@@ -268,6 +275,7 @@ echo -e "  Main Config:      ${GREEN}${MAIN_CONFIG}${NC}"
 echo -e "  Strategies:       ${GREEN}${#STRATEGIES[@]}${NC}"
 echo -e "  Param Stag Pat.:  ${GREEN}${PARAM_STAGNATION_PATIENCE}${NC}" 
 echo -e "  Param Tolerance:  ${GREEN}${PARAM_TOLERANCE}${NC}" 
+echo -e "  Top-K Validation: ${GREEN}${TOP_K_VALIDATION}${NC}"
 echo ""
 echo -e "${CYAN}Strategies to optimize:${NC}"
 for strategy_info in "${STRATEGIES[@]}"; do
@@ -329,7 +337,8 @@ for i in "${!STRATEGIES[@]}"; do
         --validation_ratio "$VALIDATION_RATIO" \
         --reward "$REWARD" \
         --param_stagnation_patience "$PARAM_STAGNATION_PATIENCE" \
-        --param_tolerance "$PARAM_TOLERANCE"
+        --param_tolerance "$PARAM_TOLERANCE" \
+        --top_k_validation "$TOP_K_VALIDATION"
     
     EXIT_CODE=$?
     STRATEGY_END=$(date +%s)

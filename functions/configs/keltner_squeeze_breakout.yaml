@@ -34,20 +34,20 @@ parameters:
   - 30
 parameters_bayesian:
   period:
-  - 1
+  - 8
   - 20
   bb_std:
-  - 1.1
+  - 1.2
   - 1.8
   kc_mult:
-  - 1.1
+  - 1.8
   - 3.2
   take_profit_pips:
-  - 2.0
+  - 4.0
   - 20.0
   stop_loss_pips:
   - 2.0
-  - 20.0
+  - 13.0
 # Not sure if I can add comments here but let's see
 parameters_bayesian_15m:
   period:
@@ -71,9 +71,27 @@ best_params_15m:
   kc_mult: 2
   take_profit_pips: 15
   stop_loss_pips: 18
-best_params:
+best_params_overfitted:
   period: 16
   bb_std: 1.243501
   kc_mult: 2.595969
   take_profit_pips: 10.78
   stop_loss_pips: 10.44
+best_params_x:
+    period: 17
+    bb_std: 1.2476874670120126
+    kc_mult: 3.18513049255417
+    take_profit_pips: 11.221918150346148
+    stop_loss_pips: 10.655016358358365
+best_params_best:
+    period: 17
+    bb_std: 1.2115077579776679
+    kc_mult: 3.1919640247506735
+    take_profit_pips: 11.601119961759514
+    stop_loss_pips: 11.123290781386578
+best_params:
+  period: 17
+  bb_std: 1.2417472239683929
+  kc_mult: 2.9961328901142
+  take_profit_pips: 11.257479310639521
+  stop_loss_pips: 11.9056041867743

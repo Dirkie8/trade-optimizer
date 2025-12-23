@@ -34,7 +34,7 @@ def _kc(df: pd.DataFrame, n: int, atr_mult: float):
     return ma, upper, lower
 
 
-class KeltnerSqueezeBreakoutAutoSl(BaseStrategy):
+class KeltnerSqueezeBreakAutoSl(BaseStrategy):
     """Keltner squeeze breakout with dynamic SL/TP based on prior bar extremes.
 
     Contract: returns (action, sl_pips, tp_pips)

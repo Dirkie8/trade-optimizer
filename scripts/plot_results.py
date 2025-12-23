@@ -37,6 +37,10 @@ def main():
     def render_one(input_path: str, output_override: str | None = None):
         with open(input_path, "r") as f:
             res = json.load(f)
+        # Skip files that don't contain an equity curve (e.g., summary JSONs)
+        if "equity_curve" not in res:
+            print(f"⚠ Skipping {input_path} — no 'equity_curve' key found")
+            return None
         return plot_payload(res, input_path, output_override)
 
     def plot_payload(results, input_path: str, output_override: str | None = None):
@@ -97,8 +101,9 @@ def main():
                     if fn.lower().endswith(".json"):
                         eval_files.append(os.path.join(root, fn))
             elif base == "optimizations":
+                # Include all JSONs and let render_one skip those without equity_curve
                 for fn in files:
-                    if "validation.json" in fn:
+                    if fn.lower().endswith(".json"):
                         eval_files.append(os.path.join(root, fn))
         eval_files.sort()
         if not eval_files:

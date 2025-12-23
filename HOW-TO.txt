@@ -287,14 +287,26 @@ Notes:
 
 ./optimize_bayesian_wf_batch.sh \
 --n_trials 800 \
---n_jobs 4 \
+--n_jobs 1 \
 --n_folds 8 \
 --validation_ratio 0.20 \
 --reward balanced \
 --param_stagnation_patience 25 \
 --param_tolerance 0.0001 \
 --yes \
---include "KeltnerSqueezeBreakout,KeltnerSqueezeBreakoutAutoSl"
+--include "KeltnerSqueezeBreakout"
+
+./optimize_bayesian_wf_batch.sh \
+  --n_trials 800 \
+  --n_jobs 4 \
+  --n_folds 6 \
+  --validation_ratio 0.20 \
+  --reward balanced \
+  --param_stagnation_patience 50 \
+  --param_tolerance 0.0001 \
+  --top_k_validation 10 \
+  --yes \
+  --include "KeltnerSqueezeBreakout"
 
 --include "DICross,FractalBreakout,HeikinAshiTrend,KeltnerSqueezeBreakout,KSTCrossover,PivotReversal,SMASlopeBreakout,StochasticOscillator"
 --include "AroonTrend,ATRBandReversion,BollingerBreakout,BollingerSqueezeBreakout,DICross,EMACrossover,EMAPullback,FractalBreakout,HeikinAshiReversal,HeikinAshiTrend,HullMACrossover,IchimokuKijunCross,KeltnerSqueezeBreakout,KSTCrossover,MACDMomentum,PivotReversal,PPOCrossover,PriceChannelReversion,SMASlopeBreakout,StochasticOscillator,StochRSIStrategy" \
@@ -323,7 +335,7 @@ python scripts/trading_bot.py --config configs/trading_bot_config.yaml \
   --test-trade --test-dry-run --test-auto-adjust
 
 # Test trading bot on data
-python scripts/trading_bot.py --mode replay --config configs/trading_bot_config.yaml --replay-output results/replay/replay_keltner.json --replay-start 2025-11-17 --replay-end 2025-11-22
+python scripts/trading_bot.py --mode replay --config configs/trading_bot_config.yaml --replay-output results/replay/replay_keltner.json --replay-start 2025-01-01 --replay-end 2025-12-18
 Run a short replay and save results:
   python scripts/trading_bot.py --mode replay \
     --config configs/trading_bot_config.yaml \

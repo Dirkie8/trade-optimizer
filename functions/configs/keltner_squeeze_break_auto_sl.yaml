@@ -1,7 +1,7 @@
 strategy:
-  class: KeltnerSqueezeBreakoutAutoSl
-  module: functions.strategies.keltner_squeeze_breakout_auto_sl
-  results_dir: keltner_squeeze_breakout_auto_sl
+  class: KeltnerSqueezeBreakAutoSl
+  module: functions.strategies.keltner_squeeze_break_auto_sl
+  results_dir: keltner_squeeze_break_auto_sl
 name: Keltner Squeeze Breakout (Auto SL)
 parameters:
   period:

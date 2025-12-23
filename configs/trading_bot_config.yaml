@@ -17,7 +17,7 @@ account:
 
   # Trading & risk behavior (mirror backtester)
   starting_balance: 100
-  risk_per_trade: 0.05
+  risk_per_trade: 0.10
   spread_pips: 0.2
   commission_per_trade: 0.0
   leverage: 100
@@ -27,7 +27,7 @@ account:
   min_stop_pips: 0
   min_size: 0.01
   lot_step: 0.01
-  max_lot_size: 1.00
+  max_lot_size: 0.01
   contract_size: 100000
   pip_value_per_lot: 10.0
   equity_rounding: 0.01

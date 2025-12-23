@@ -334,6 +334,7 @@ def run_bayesian_optimization(
     seed: int = 42,
     param_stagnation_patience: int = 0,
     param_tolerance: float = 0.0,
+    top_k_validation: int = 0,
 ):
     """
     Run Bayesian optimization with walk-forward validation.
@@ -406,7 +407,15 @@ def run_bayesian_optimization(
     print(f"  Walk-forward folds: {n_folds}")
     print(f"  Reward type: {reward_type}")
     
-    sampler = TPESampler(seed=seed, n_startup_trials=min(10, n_trials // 5))
+    # Configure TPE for stable sampling and interaction modeling
+    # Configure TPESampler with stable options compatible with installed Optuna
+    # Note: consider_running_trials is not available in current Optuna; constant_liar handles parallelism.
+    sampler = TPESampler(
+        seed=seed,
+        n_startup_trials=min(10, n_trials // 5),
+        multivariate=True,
+        constant_liar=True,
+    )
     study = optuna.create_study(
         direction="maximize",
         sampler=sampler,
@@ -725,6 +734,150 @@ def run_bayesian_optimization(
     with open(val_path, 'w') as f:
         json.dump(validation_output, f, indent=2)
     print(f"{GREEN}✓ Saved validation details to: {val_path}{RESET}")
+
+    # Optional: run validation on top-K trials (sorted by training reward)
+    if isinstance(top_k_validation, int) and top_k_validation and top_k_validation > 1 and len(all_results) > 1:
+        # Sort by reward_metric descending, take top-K
+        try:
+            rows_sorted = sorted(all_results, key=lambda r: r.get('reward_metric', float('-inf')), reverse=True)
+        except Exception:
+            rows_sorted = list(all_results)
+        top_rows = rows_sorted[:min(top_k_validation, len(rows_sorted))]
+        topk_validations = []
+        for rank, r in enumerate(top_rows, start=1):
+            # Reconstruct params from row
+            try:
+                params_r = {k.replace('param_', ''): r[k] for k in r.keys() if str(k).startswith('param_')}
+            except Exception:
+                params_r = dict(study.best_params)
+            # Run validation
+            try:
+                max_lb_r = infer_max_lookback(strategy_name, params_r)
+                val_r = backtest_strategy(
+                    data=validation_data,
+                    symbol=symbol,
+                    strategy_cls=StrategyCls,
+                    params=params_r,
+                    account_cfg=account_cfg,
+                    max_lookback=max_lb_r,
+                    progress=None,
+                )
+                trades_r = val_r.get('trades', [])
+                if trades_r and isinstance(trades_r, list):
+                    if hasattr(trades_r[0], '__dict__'):
+                        trades_df_r = pd.DataFrame([{k: v for k, v in t.__dict__.items()} for t in trades_r])
+                    else:
+                        trades_df_r = pd.DataFrame(trades_r)
+                else:
+                    trades_df_r = pd.DataFrame()
+                val_reward_r = calculate_reward_metric(
+                    trades_df_r,
+                    val_r.get('equity_curve', []),
+                    val_r,
+                    reward_type,
+                )
+                # Floor non-finite rewards and capture reason (mirror best validation handling)
+                reward_raw_r = float(val_reward_r) if isinstance(val_reward_r, (int, float, np.number)) else -np.inf
+                reward_reason_r = None
+                reward_floored_r = reward_raw_r
+                if not np.isfinite(reward_raw_r):
+                    reasons = []
+                    if trades_df_r.empty or len(trades_df_r) < 5:
+                        reasons.append("insufficient_trades")
+                    else:
+                        try:
+                            pnlr = trades_df_r['pnl'].to_numpy()
+                            if pnlr.size == 0:
+                                reasons.append("no_pnl_data")
+                            elif np.all(pnlr == 0):
+                                reasons.append("all_zero_pnl")
+                            else:
+                                chunksr = np.array_split(pnlr, min(5, len(pnlr)))
+                                chunk_sumsr = [np.sum(c) for c in chunksr if len(c) > 0]
+                                if len(chunk_sumsr) == 0:
+                                    reasons.append("no_valid_chunks")
+                                else:
+                                    if np.std(chunk_sumsr) == 0:
+                                        reasons.append("chunk_std_zero")
+                        except Exception:
+                            reasons.append("reward_calc_error")
+                    if not reasons:
+                        reasons.append("non_finite_reward")
+                    reward_reason_r = ",".join(reasons)
+                    reward_floored_r = -1e10
+
+                topk_validations.append({
+                    'trial_number': r.get('trial_number'),
+                    'train_reward': r.get('reward_metric'),
+                    'params': params_r,
+                    'validation_metrics': {
+                        'reward_metric': float(reward_floored_r),
+                        'reward_raw': float(reward_raw_r) if np.isfinite(reward_raw_r) or reward_raw_r in [np.inf, -np.inf] else float('nan'),
+                        'reward_reason': reward_reason_r,
+                        'reward_floor_applied': bool(reward_reason_r is not None),
+                        'total_return_pct': float(val_r.get('total_return_pct', 0.0)),
+                        'sharpe': float(val_r.get('sharpe', 0.0)),
+                        'sortino': float(val_r.get('sortino', 0.0)),
+                        'calmar': float(val_r.get('calmar', 0.0)),
+                        'max_drawdown_pct': float(val_r.get('max_drawdown_pct', 0.0)),
+                        'trades': int(val_r.get('trades', 0)),
+                    },
+                })
+
+                # Write detailed per-item validation JSON with equity curve
+                item_details = {
+                    'trial_number': r.get('trial_number'),
+                    'rank': rank,
+                    'train_reward': r.get('reward_metric'),
+                    'train_metrics': {k: r.get(k) for k in r.keys() if k not in ['equity_curve'] and not str(k).startswith('param_')},
+                    'params': params_r,
+                    'validation_metrics': {
+                        'reward_metric': float(reward_floored_r),
+                        'reward_raw': float(reward_raw_r) if np.isfinite(reward_raw_r) or reward_raw_r in [np.inf, -np.inf] else float('nan'),
+                        'reward_reason': reward_reason_r,
+                        'reward_floor_applied': bool(reward_reason_r is not None),
+                        'total_return_pct': float(val_r.get('total_return_pct', 0.0)),
+                        'sharpe': float(val_r.get('sharpe', 0.0)),
+                        'sortino': float(val_r.get('sortino', 0.0)),
+                        'calmar': float(val_r.get('calmar', 0.0)),
+                        'max_drawdown_pct': float(val_r.get('max_drawdown_pct', 0.0)),
+                        'trades': int(val_r.get('trades', 0)),
+                    },
+                    'equity_curve': val_r.get('equity_curve', []),
+                }
+                item_path = output_dir / f"bayesian_wf_topk_validation_item_{rank}_trial_{r.get('trial_number')}.json"
+                try:
+                    with open(item_path, 'w') as f:
+                        json.dump(item_details, f, indent=2)
+                    print(f"{GREEN}✓ Saved detailed top-{rank} validation to: {item_path}{RESET}")
+                except Exception as e:
+                    print(f"{YELLOW}Warning: failed to save detailed top-{rank} validation: {e}{RESET}")
+            except Exception as e:
+                topk_validations.append({
+                    'trial_number': r.get('trial_number'),
+                    'train_reward': r.get('reward_metric'),
+                    'params': params_r,
+                    'error': f'{e}',
+                })
+        # Save top-K validations JSON and CSV
+        topk_path = output_dir / 'bayesian_wf_topk_validation.json'
+        with open(topk_path, 'w') as f:
+            json.dump({'top_k': len(topk_validations), 'items': topk_validations}, f, indent=2)
+        try:
+            pd.DataFrame([
+                {
+                    'trial_number': it.get('trial_number'),
+                    'train_reward': it.get('train_reward'),
+                    'validation_reward': it.get('validation_metrics', {}).get('reward_metric'),
+                    'validation_return_pct': it.get('validation_metrics', {}).get('total_return_pct'),
+                    'validation_sharpe': it.get('validation_metrics', {}).get('sharpe'),
+                    'validation_trades': it.get('validation_metrics', {}).get('trades'),
+                }
+                for it in topk_validations
+            ]).to_csv(output_dir / 'bayesian_wf_topk_validation.csv', index=False)
+        except Exception:
+            pass
+        print(f"{GREEN}✓ Saved top-{len(topk_validations)} validation summary to: {topk_path}{RESET}")
     
     print(f"\n{BOLD}{GREEN}{'='*80}{RESET}")
     print(f"{BOLD}{GREEN}Optimization Complete!{RESET}")
@@ -770,6 +923,7 @@ Examples:
     parser.add_argument('--seed', type=int, default=42, help='Random seed (default: 42)')
     parser.add_argument('--param_stagnation_patience', type=int, default=0, help='Early stop if best params unchanged for this many consecutive trials (0 disables).')
     parser.add_argument('--param_tolerance', type=float, default=0.0, help='Tolerance for float parameter equality when detecting stagnation (default: 0 exact match).')
+    parser.add_argument('--top_k_validation', type=int, default=0, help='Validate top-k trials on the hold-out set (0 disables; e.g., 5 or 10).')
     
     args = parser.parse_args()
     
@@ -833,6 +987,7 @@ Examples:
         seed=args.seed,
         param_stagnation_patience=args.param_stagnation_patience,
         param_tolerance=args.param_tolerance,
+        top_k_validation=args.top_k_validation,
     )
 
 

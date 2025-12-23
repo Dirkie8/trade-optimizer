@@ -6,6 +6,7 @@ Examples:
   python scripts/fetch_data.py --symbol EURUSD --timeframe 1m --days 5
   python scripts/fetch_data.py --symbol EURUSD --timeframe 5m --startdate 2025-01-01 --enddate 2025-12-15
   python scripts/fetch_data.py --symbol EURUSD --timeframe 5m --startdate 2025-11-25 --enddate 2025-12-10
+  python scripts/fetch_data.py --symbol EURUSD --timeframe 5m --startdate 2025-11-26 --enddate 2025-12-18
 """
 import argparse
 import io
