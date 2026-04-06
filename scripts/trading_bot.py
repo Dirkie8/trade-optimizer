@@ -103,6 +103,17 @@ def theoretical_max_lots_from_margin_budget(margin_budget: float, leverage: floa
     return float(margin_budget) * leverage / (100000.0 * price)
 
 
+def timeframe_to_minutes(tf: str) -> int:
+    tf = tf.lower().strip()
+    if tf.endswith('m'):
+        return int(tf[:-1])
+    if tf.endswith('h'):
+        return int(tf[:-1]) * 60
+    if tf.endswith('d'):
+        return int(tf[:-1]) * 1440
+    raise ValueError(f'Unsupported timeframe {tf}')
+
+
 def _server_time_utc(symbol: str) -> datetime:
     mt5 = _try_import_mt5()
     if mt5 is not None:
@@ -221,6 +232,167 @@ def _append_balance_journal(csv_path: Path, row: Dict[str, Any]) -> None:
             f.write(','.join(values)+'\n')
     except Exception:
         pass
+
+
+def _simulate_warmup_open_positions(
+    *,
+    data: pd.DataFrame,
+    symbol: str,
+    strategy_cls,
+    params: Dict[str, Any],
+    account_cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Simulate trades over historical bars and return open positions at the end.
+
+    Uses parity_bot-style rules (entry on next bar open, SL before TP).
+    """
+    warmup = infer_max_lookback(params)
+    if len(data) < warmup + 2:
+        return {'open_positions': [], 'last_closed_bar_ts': None}
+
+    starting_balance = float(account_cfg.get('starting_balance', 10000.0) or 10000.0)
+    risk_frac = float(account_cfg.get('risk_per_trade', 0.01) or 0.01)
+    spread_pips = float(account_cfg.get('spread_pips', 0.0) or 0.0)
+    commission = float(account_cfg.get('commission_per_trade', 0.0) or 0.0)
+    leverage = float(account_cfg.get('leverage', 0.0) or 0.0)
+    slippage_pips = float(account_cfg.get('slippage_pips', 0.0) or 0.0)
+    min_stop_pips = float(account_cfg.get('min_stop_pips', 0.0) or 0.0)
+    min_size = float(account_cfg.get('min_size', 0.0) or 0.0)
+    lot_step = float(account_cfg.get('lot_step', 0.0) or 0.0)
+    max_lot_size = float(account_cfg.get('max_lot_size', 0.0) or 0.0)
+    contract_size = float(account_cfg.get('contract_size', 100000.0) or 100000.0)
+    equity_rounding = float(account_cfg.get('equity_rounding', 0.0) or 0.0)
+    cooldown_bars_after_exit = int(account_cfg.get('cooldown_bars_after_exit', 0) or 0)
+    no_same_bar_reentry = bool(account_cfg.get('no_same_bar_reentry', False))
+
+    pip = pip_size(symbol)
+    spread_price = pips_to_price(spread_pips, symbol)
+    slippage_price = pips_to_price(slippage_pips, symbol)
+    pvp_override = account_cfg.get('pip_value_per_lot')
+    pip_value_per_lot = float(pvp_override) if pvp_override is not None else contract_size * pip
+
+    equity = starting_balance
+    open_positions: list[Dict[str, Any]] = []
+    last_exit_bar_index = None
+
+    idx = data.index
+    for i in range(warmup, len(data) - 1):
+        nxt = idx[i + 1]
+
+        # Exit evaluation first, SL before TP
+        if open_positions:
+            h = float(data.iloc[i + 1]['High'])
+            l = float(data.iloc[i + 1]['Low'])
+            for pos in list(open_positions):
+                exit_price = None
+                if pos['direction'] == 'BUY':
+                    if l <= pos['stop_price']:
+                        exit_price = pos['stop_price'] - spread_price * 0.5 - slippage_price
+                        exit_reason = 'SL'
+                    elif h >= pos['tp_price']:
+                        exit_price = pos['tp_price'] - spread_price * 0.5 - slippage_price
+                        exit_reason = 'TP'
+                else:  # SELL
+                    if h >= pos['stop_price']:
+                        exit_price = pos['stop_price'] + spread_price * 0.5 + slippage_price
+                        exit_reason = 'SL'
+                    elif l <= pos['tp_price']:
+                        exit_price = pos['tp_price'] + spread_price * 0.5 + slippage_price
+                        exit_reason = 'TP'
+                if exit_price is not None:
+                    direction_mult = 1.0 if pos['direction'] == 'BUY' else -1.0
+                    price_diff = (exit_price - pos['entry_price'])
+                    pips_signed = (price_diff / pip) * direction_mult if pip > 0 else 0.0
+                    pnl = pips_signed * pip_value_per_lot * pos['size']
+                    pnl -= commission
+                    equity += pnl
+                    if equity_rounding and equity_rounding > 0:
+                        equity = round(equity / equity_rounding) * equity_rounding
+                    open_positions.remove(pos)
+                    last_exit_bar_index = i + 1
+
+        # Open new trade using backtester rules
+        if no_same_bar_reentry and last_exit_bar_index is not None and last_exit_bar_index == i + 1:
+            continue
+        if cooldown_bars_after_exit and last_exit_bar_index is not None:
+            if (i + 1) - last_exit_bar_index < cooldown_bars_after_exit:
+                continue
+
+        window = data.iloc[:i + 1]
+        strat = strategy_cls(window, params)
+        action, sl_pips, tp_pips = strat.generate_signals()
+        if action in ('BUY', 'SELL') and sl_pips is not None and tp_pips is not None:
+            if min_stop_pips and float(sl_pips) < min_stop_pips:
+                continue
+            entry_open = float(data.iloc[i + 1]['Open'])
+            if action == 'BUY':
+                entry_price = entry_open + spread_price * 0.5 + slippage_price
+                stop_price = entry_price - pips_to_price(sl_pips, symbol)
+                tp_price = entry_price + pips_to_price(tp_pips, symbol)
+            else:
+                entry_price = entry_open - spread_price * 0.5 - slippage_price
+                stop_price = entry_price + pips_to_price(sl_pips, symbol)
+                tp_price = entry_price - pips_to_price(tp_pips, symbol)
+
+            stop_dist = abs(entry_price - stop_price)
+            if stop_dist <= 0:
+                continue
+            risk_amount = equity * risk_frac
+            stop_pips_eff = float(sl_pips)
+            size = max(risk_amount / (stop_pips_eff * pip_value_per_lot), 0.0)
+            if leverage and leverage > 0 and entry_price > 0:
+                allowable = (equity * leverage) / (contract_size * entry_price)
+                if allowable <= 0:
+                    continue
+                size = min(size, allowable)
+            if lot_step and lot_step > 0:
+                size = (size // lot_step) * lot_step
+            if max_lot_size and max_lot_size > 0 and size > max_lot_size:
+                size = max_lot_size
+            if min_size and size < min_size:
+                continue
+
+            equity -= commission
+            if equity_rounding and equity_rounding > 0:
+                equity = round(equity / equity_rounding) * equity_rounding
+            open_positions.append({
+                'direction': action,
+                'entry_time': nxt,
+                'entry_price': float(entry_price),
+                'stop_price': float(stop_price),
+                'tp_price': float(tp_price),
+                'size': float(size),
+            })
+
+    last_closed_bar_ts = data.index[-1] if len(data) > 0 else None
+    return {'open_positions': open_positions, 'last_closed_bar_ts': last_closed_bar_ts}
+
+
+def _update_simulated_positions_for_bar(
+    positions: list[Dict[str, Any]],
+    *,
+    bar_high: float,
+    bar_low: float,
+    spread_price: float,
+    slippage_price: float,
+) -> list[Dict[str, Any]]:
+    """Update simulated positions for a single closed bar and return remaining positions."""
+    remaining: list[Dict[str, Any]] = []
+    for pos in positions:
+        exit_price = None
+        if pos['direction'] == 'BUY':
+            if bar_low <= pos['stop_price']:
+                exit_price = pos['stop_price'] - spread_price * 0.5 - slippage_price
+            elif bar_high >= pos['tp_price']:
+                exit_price = pos['tp_price'] - spread_price * 0.5 - slippage_price
+        else:
+            if bar_high >= pos['stop_price']:
+                exit_price = pos['stop_price'] + spread_price * 0.5 + slippage_price
+            elif bar_low <= pos['tp_price']:
+                exit_price = pos['tp_price'] + spread_price * 0.5 + slippage_price
+        if exit_price is None:
+            remaining.append(pos)
+    return remaining
 
 
 def run_strategy_once(
@@ -1209,6 +1381,93 @@ def main():
             log_line(f"[TEST] send_market_order retcode={result.get('retcode')} order={result}")
             return
 
+        # --- Warm-up simulation (concurrency gating only) ---
+        warmup_days = float(bot_cfg.get('runtime', {}).get('warmup_days', 0) or 0)
+        sim_positions_by_symbol: Dict[str, list[Dict[str, Any]]] = {}
+        sim_last_bar_ts: Dict[str, pd.Timestamp] = {}
+        if warmup_days > 0:
+            log_line(f"Warm-up: simulating {warmup_days} days of history for concurrency gating...")
+            apply_round = bool(bot_cfg.get('runtime', {}).get('apply_param_rounding', False))
+            round_dec = int(bot_cfg.get('runtime', {}).get('round_params_decimals', 2))
+            for strat in strategies:
+                symbol = resolve_symbol(strat.get('symbol'))
+                timeframe = strat.get('timeframe') or general_defaults['general']['default_timeframe']
+                mt5a.ensure_symbol(symbol)
+                try:
+                    with open(strat['strategy_config'], 'r') as f:
+                        strat_yaml = yaml.safe_load(f)
+                except Exception as e:
+                    log_line(f"Warm-up: failed to load strategy YAML for {strat['name']}: {e}")
+                    continue
+
+                params = strat_yaml.get('best_params') or strat_yaml.get('parameters_best')
+                if not isinstance(params, dict) or not params:
+                    log_line(f"Warm-up: no best_params for {strat['name']}; skipping.")
+                    continue
+
+                pips_scale = float(strat_yaml.get('pips_param_scale', 1.0) or 1.0)
+                pips_keys = strat_yaml.get('pips_param_keys') or ['stop_loss_pips', 'take_profit_pips']
+                if pips_scale != 1.0:
+                    params = params.copy()
+                    for k in pips_keys:
+                        if k in params and isinstance(params[k], (int, float)):
+                            v = float(params[k])
+                            if v >= 1.0:
+                                params[k] = v * pips_scale
+                if apply_round and isinstance(round_dec, (int, float)):
+                    def _round_numeric_params(p: Dict[str, Any], decimals: int = 2) -> Dict[str, Any]:
+                        out: Dict[str, Any] = {}
+                        for kk, vv in p.items():
+                            if isinstance(vv, bool) or isinstance(vv, int):
+                                out[kk] = vv
+                            else:
+                                try:
+                                    out[kk] = round(float(vv), int(decimals))
+                                except Exception:
+                                    out[kk] = vv
+                        return out
+                    params = _round_numeric_params(params, int(round_dec))
+
+                try:
+                    mod_path = strat_yaml['strategy'].get('module', 'functions.strategies')
+                    cls_name = strat_yaml['strategy']['class']
+                    mod = __import__(mod_path, fromlist=[cls_name])
+                    StrategyCls = getattr(mod, cls_name)
+                except Exception as e:
+                    log_line(f"Warm-up: failed to load strategy class for {strat['name']}: {e}")
+                    continue
+
+                mins = timeframe_to_minutes(timeframe)
+                bars_needed = int(math.ceil(warmup_days * 1440 / mins))
+                warmup_extra = infer_max_lookback(params) + 5
+                count = max(200, bars_needed + warmup_extra)
+                try:
+                    df = mt5a.fetch_recent_bars(symbol, timeframe, count=count)
+                except Exception as e:
+                    log_line(f"Warm-up: failed to fetch bars for {symbol} {timeframe}: {e}")
+                    continue
+
+                start_ts = _server_time_utc(symbol) - timedelta(days=warmup_days)
+                df = df.loc[start_ts:]
+                if len(df) < infer_max_lookback(params) + 2:
+                    log_line(f"Warm-up: insufficient bars for {strat['name']} after filtering; skipping.")
+                    continue
+
+                sim_res = _simulate_warmup_open_positions(
+                    data=df,
+                    symbol=symbol,
+                    strategy_cls=StrategyCls,
+                    params=params,
+                    account_cfg=risk_cfg,
+                )
+                if sim_res.get('open_positions'):
+                    sim_positions_by_symbol.setdefault(symbol, []).extend(sim_res['open_positions'])
+                if sim_res.get('last_closed_bar_ts') is not None:
+                    sim_last_bar_ts[f"{symbol}|{timeframe}"] = pd.to_datetime(sim_res['last_closed_bar_ts'])
+
+            for sym, positions in sim_positions_by_symbol.items():
+                log_line(f"Warm-up: {sym} simulated_open={len(positions)}")
+
         # Header
         mt5 = _try_import_mt5()
         ai = None
@@ -1369,25 +1628,68 @@ def main():
                         continue
                     if last_bar_boundary_seen.get(key) == pd.Timestamp(boundary_start):
                         continue
-                    res = run_strategy_once(
-                        strat['strategy_config'],
-                        {'symbol':symbol_res, **strat},
-                        general_defaults,
-                        mt5a,
-                        risk_cfg,
-                        dry_run=args.dry_run,
-                        max_positions=risk_cfg.get('max_concurrent_positions'),
-                        last_closed_bar_ts=last_bar_seen.get(key),
-                        apply_param_rounding=bool(bot_cfg.get('runtime',{}).get('apply_param_rounding', False)),
-                        round_params_decimals=int(bot_cfg.get('runtime',{}).get('round_params_decimals', 2)),
-                    )
+                    closed_ts = None
+                    simulated_open = 0
+                    if warmup_days > 0:
+                        try:
+                            df_last = mt5a.fetch_recent_bars(symbol_res, timeframe, count=2)
+                            if len(df_last) >= 2:
+                                closed_bar = df_last.iloc[-2]
+                                closed_ts = pd.to_datetime(closed_bar.name)
+                                sim_key = f"{symbol_res}|{timeframe}"
+                                if sim_last_bar_ts.get(sim_key) != closed_ts:
+                                    spread_price = pips_to_price(risk_cfg.get('spread_pips', 0.0) or 0.0, symbol_res)
+                                    slippage_price = pips_to_price(risk_cfg.get('slippage_pips', 0.0) or 0.0, symbol_res)
+                                    sim_positions_by_symbol[symbol_res] = _update_simulated_positions_for_bar(
+                                        sim_positions_by_symbol.get(symbol_res, []),
+                                        bar_high=float(closed_bar['High']),
+                                        bar_low=float(closed_bar['Low']),
+                                        spread_price=spread_price,
+                                        slippage_price=slippage_price,
+                                    )
+                                    sim_last_bar_ts[sim_key] = closed_ts
+                        except Exception:
+                            pass
+                        simulated_open = len(sim_positions_by_symbol.get(symbol_res, []))
+
+                    max_positions_cfg = risk_cfg.get('max_concurrent_positions')
+                    max_positions_eff = max_positions_cfg
+                    if max_positions_cfg is not None and warmup_days > 0:
+                        try:
+                            max_positions_eff = int(max_positions_cfg) - int(simulated_open)
+                        except Exception:
+                            max_positions_eff = max_positions_cfg
+
+                    if warmup_days > 0 and max_positions_eff is not None and isinstance(max_positions_eff, (int, float)) and max_positions_eff <= 0:
+                        res = {
+                            'status': 'warmup_position_limit',
+                            'simulated_open': simulated_open,
+                            'max_positions': max_positions_cfg,
+                            'closed_bar_ts': closed_ts,
+                        }
+                        if closed_ts is not None:
+                            last_bar_seen[key] = closed_ts
+                        last_bar_boundary_seen[key] = pd.Timestamp(boundary_start)
+                    else:
+                        res = run_strategy_once(
+                            strat['strategy_config'],
+                            {'symbol':symbol_res, **strat},
+                            general_defaults,
+                            mt5a,
+                            risk_cfg,
+                            dry_run=args.dry_run,
+                            max_positions=max_positions_eff,
+                            last_closed_bar_ts=last_bar_seen.get(key),
+                            apply_param_rounding=bool(bot_cfg.get('runtime',{}).get('apply_param_rounding', False)),
+                            round_params_decimals=int(bot_cfg.get('runtime',{}).get('round_params_decimals', 2)),
+                        )
                     if 'closed_bar_ts' in res and res['status'] not in ('no_data',):
                         last_bar_seen[key] = res['closed_bar_ts']
                         last_bar_boundary_seen[key] = pd.Timestamp(boundary_start)
                     if res['status'] == 'no_new_bar':
                         continue
                     parts = [f"{time.strftime('%Y-%m-%d %H:%M:%S')} | {res['status']}"]
-                    if res.get('action') in ('BUY','SELL') or res['status'] in ('sent','dry_run','order_error','lot_below_min','insufficient_margin'):
+                    if res.get('action') in ('BUY','SELL') or res['status'] in ('sent','dry_run','order_error','lot_below_min','insufficient_margin','warmup_position_limit'):
                         if res.get('action'): parts.append(str(res.get('action')))
                         if res.get('lot') is not None: parts.append(f"lot={res.get('lot')}")
                         if res.get('entry') is not None:
@@ -1414,6 +1716,9 @@ def main():
                                 except Exception: parts.append(f"mreq={res.get('margin_required')}")
                         if res['status']=='lot_below_min':
                             if res.get('leverage') is not None: parts.append(f"lev={res.get('leverage')}")
+                        if res['status']=='warmup_position_limit':
+                            if res.get('simulated_open') is not None: parts.append(f"sim_open={res.get('simulated_open')}")
+                            if res.get('max_positions') is not None: parts.append(f"max_pos={res.get('max_positions')}")
                     if 'closed_bar_ts' in res and res['closed_bar_ts'] is not None:
                         try:
                             bar_ts = pd.to_datetime(res['closed_bar_ts'])

@@ -1,6 +1,6 @@
 strategy:
   class: RSIWithMAFilter
-  module: functions.strategies.rsi_ma_filter
+  module: functions.strategies.rsi_with_ma_filter
   results_dir: rsi_with_ma_filter
 name: RSI with EMA Trend Filter
 parameters:

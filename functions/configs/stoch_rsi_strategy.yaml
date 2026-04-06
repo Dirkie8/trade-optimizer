@@ -1,6 +1,6 @@
 strategy:
   class: StochRSIStrategy
-  module: functions.strategies.stoch_rsi_signal
+  module: functions.strategies.stoch_rsi_strategy
   results_dir: stoch_rsi_strategy
 name: StochRSI Strategy
 parameters:

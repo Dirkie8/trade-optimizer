@@ -35,20 +35,20 @@ parameters:
   - 30
 parameters_bayesian:
   stoch_k_period:
-  - 8
-  - 25
+  - 21
+  - 27
   stoch_d_period:
-  - 3
-  - 10
+  - 5
+  - 9
   oversold:
-  - 10
-  - 30
+  - 4
+  - 16
   overbought:
-  - 70
-  - 90
+  - 82
+  - 98
   take_profit_pips:
-  - 15
+  - 30
   - 60
   stop_loss_pips:
-  - 10
-  - 35
+  - 20
+  - 50

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import sys
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 import numpy as np
@@ -8,9 +9,14 @@ import pandas as pd
 
 from functions.base_strategy import BaseStrategy
 from scripts.utils.data_utils import pips_to_price, pip_size
-try:
-    from tqdm.auto import tqdm
-except Exception:  # pragma: no cover
+# Robust tqdm import: prefer auto, fall back to base; else disable gracefully
+try:  # pragma: no cover - environment-dependent
+    try:
+        from tqdm.auto import tqdm as _tqdm
+    except Exception:  # Fallback if auto not available
+        from tqdm import tqdm as _tqdm  # type: ignore
+    tqdm = _tqdm
+except Exception:  # Final fallback: no progress bar available
     tqdm = None
 
 
@@ -108,13 +114,35 @@ def backtest_strategy(
     iter_range = range(warmup, len(df) - 1)
 
     # Optional per-run progress bar
+    manual_progress = False
+    manual_step_every = None
+    total_steps = (len(df) - 1 - warmup)
     if progress and tqdm is not None:
         desc = progress.get("desc") or "Backtest"
         position = int(progress.get("position", 0))
         leave = bool(progress.get("leave", False))
-        bar = tqdm(iter_range, total=(len(df) - 1 - warmup), desc=desc, position=position, leave=leave, unit="step")
+        # Force-enable display even if not detected as TTY; better UX in VS Code terminal
+        bar = tqdm(
+            iter_range,
+            total=total_steps,
+            desc=desc,
+            position=position,
+            leave=leave,
+            unit="step",
+            dynamic_ncols=True,
+            disable=False,
+        )
     else:
         bar = iter_range
+        # If progress requested but tqdm unavailable, provide periodic textual updates
+        if progress and tqdm is None and total_steps > 0:
+            manual_progress = True
+            # Print ~20 updates across the run
+            manual_step_every = max(1, total_steps // 20)
+            # Initial header for ASCII progress bar
+            desc = progress.get('desc') or 'Backtest'
+            sys.stdout.write(f"{desc}: {total_steps} steps...\n")
+            sys.stdout.flush()
 
     max_concurrent = int(account_cfg.get("max_concurrent_positions", 1) or 1)
 
@@ -123,6 +151,21 @@ def backtest_strategy(
         nxt = index[i + 1]
         window = df.iloc[: i + 1]
         closed_this_bar = False
+
+        # Manual progress prints when tqdm is unavailable (single-line ASCII bar)
+        if manual_progress and manual_step_every is not None:
+            done = (i - warmup)
+            if done % manual_step_every == 0 or done == total_steps - 1:
+                pct = int(round((done + 1) * 100.0 / total_steps))
+                bar_len = 40
+                filled = min(bar_len, max(0, int(bar_len * pct / 100)))
+                bar_txt = "█" * filled + " " * (bar_len - filled)
+                # carriage-return update in place
+                sys.stdout.write(f"\r[{bar_txt}] {done + 1}/{total_steps} ({pct}%)")
+                sys.stdout.flush()
+                if done == total_steps - 1:
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
 
         # Update equity curve at current bar close
         equity_curve.append({"time": now.isoformat(), "equity": equity})

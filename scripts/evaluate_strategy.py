@@ -111,6 +111,7 @@ def main():
     parser.add_argument("--results_root", default="results", help="Root directory to read optimization artifacts from (default: results)")
     parser.add_argument("--param_source", choices=["auto", "opt", "yaml", "best_yaml"], default="auto", help="Where to source parameters from: auto (default priority), opt (optimization artifacts only), yaml (first values in parameters), best_yaml (use best_params in YAML)")
     parser.add_argument("--no_round", action="store_true", help="Disable rounding floats to 2 decimals before backtest")
+    parser.add_argument("--param_json", default=None, help="Explicit optimization JSON file containing a 'params' object to use for backtest")
     args = parser.parse_args()
 
     with open(args.strategy_config, "r") as f:
@@ -226,7 +227,18 @@ def main():
 
     param_source_used = "auto"
     param_source_path: str | None = None
-    if args.param_source == "auto":
+    if args.param_json:
+        param_json_path = os.path.expanduser(args.param_json)
+        if not os.path.isfile(param_json_path):
+            raise FileNotFoundError(f"param_json not found: {param_json_path}")
+        with open(param_json_path, "r") as f:
+            blob = json.load(f)
+        params = blob.get("params")
+        if not isinstance(params, dict):
+            raise ValueError(f"param_json must contain a top-level 'params' object: {param_json_path}")
+        param_source_used = "param_json"
+        param_source_path = param_json_path
+    elif args.param_source == "auto":
         params = select_params(strat_conf, default_opt_dir, args.optimization_csv, args.selection_metric)
         # best effort to find the path used (for WF best)
         for cand in [
@@ -284,7 +296,7 @@ def main():
     print(f"  Data points: {len(data)}")
     print(f"  Date range: {data.index[0]} to {data.index[-1]}")
     src_label = param_source_used
-    if param_source_used in ("auto", "opt") and param_source_path:
+    if param_source_used in ("auto", "opt", "param_json") and param_source_path:
         src_label += f" ({param_source_path})"
     elif param_source_used in ("yaml", "best_yaml"):
         src_label += " (YAML)"

@@ -155,13 +155,13 @@ def calculate_reward_metric(
 
 def infer_max_lookback(strategy_name: str, params: Dict[str, Any]) -> int:
     """Infer max lookback from strategy parameters."""
-    period_keys = [k for k in params.keys() if 'period' in k.lower() or 'window' in k.lower()]
+    period_keys = [k for k in params.keys() if 'period' in k.lower() or 'window' in k.lower() or 'ema' in k.lower()]
     if period_keys:
         periods = [int(params[k]) for k in period_keys if isinstance(params.get(k), (int, float))]
         if periods:
             return max(periods) + 50
     
-    if "Moving Average" in strategy_name or "MA" in strategy_name:
+    if "Moving Average" in strategy_name or "MA" in strategy_name or "EMA" in strategy_name:
         ma_keys = [k for k in params.keys() if 'ma' in k.lower()]
         if ma_keys:
             return max([int(params[k]) for k in ma_keys if isinstance(params.get(k), (int, float))], default=200) + 50
@@ -250,15 +250,17 @@ def run_walk_forward_backtest(
             )
             
             # Calculate reward for this fold
-            trades = result.get('trades', [])
-            if trades and isinstance(trades, list):
-                # Convert trades to DataFrame (handles list of dicts or Trade objects)
-                if hasattr(trades[0], '__dict__'):
-                    # Trade objects - convert to dicts
-                    trades_df = pd.DataFrame([{k: v for k, v in t.__dict__.items()} for t in trades])
+            # Prefer 'trades_detail' list; fallback to 'trades' only if it's a list
+            trades_list = result.get('trades_detail', [])
+            if not trades_list:
+                t_alt = result.get('trades', [])
+                trades_list = t_alt if isinstance(t_alt, list) else []
+            if trades_list:
+                # Convert to DataFrame from dicts or Trade objects
+                if hasattr(trades_list[0], '__dict__'):
+                    trades_df = pd.DataFrame([{k: v for k, v in t.__dict__.items()} for t in trades_list])
                 else:
-                    # Already dicts
-                    trades_df = pd.DataFrame(trades)
+                    trades_df = pd.DataFrame(trades_list)
             else:
                 trades_df = pd.DataFrame()
             
@@ -366,6 +368,13 @@ def run_bayesian_optimization(
         sys.exit(1)
     
     param_ranges = strategy_config['parameters_bayesian']
+    # Log parameter space to confirm parameters_bayesian usage
+    try:
+        print(f"\n{YELLOW}Parameter space (parameters_bayesian) from {strategy_config_path}:{RESET}")
+        for k, v in param_ranges.items():
+            print(f"  - {k}: {v}")
+    except Exception:
+        pass
     
     # Load strategy class
     strategy_module_name = strategy_config.get('strategy', {}).get('module')
@@ -384,6 +393,14 @@ def run_bayesian_optimization(
     symbol = general_conf.get("default_symbol", "EURUSD")
     timeframe = general_conf.get("default_timeframe", "1h")
     data = load_data(symbol, timeframe)
+    # Confirm Volume is present and non-null for optimization
+    try:
+        has_vol = 'Volume' in data.columns
+        nonzero = int((data['Volume'] > 0).sum()) if has_vol else 0
+        print(f"{GREEN}Data columns:{RESET} {list(data.columns)}")
+        print(f"{GREEN}Volume present:{RESET} {has_vol} | nonzero bars: {nonzero}")
+    except Exception:
+        pass
     
     print(f"Total data points: {len(data)}")
     print(f"Date range: {data.index[0]} to {data.index[-1]}")
@@ -565,12 +582,16 @@ def run_bayesian_optimization(
     )
     
     # Calculate validation reward
-    trades = validation_result.get('trades', [])
-    if trades and isinstance(trades, list):
-        if hasattr(trades[0], '__dict__'):
-            trades_df = pd.DataFrame([{k: v for k, v in t.__dict__.items()} for t in trades])
+    # Build trades_df from trades_detail primarily
+    trades_list = validation_result.get('trades_detail', [])
+    if not trades_list:
+        t_alt = validation_result.get('trades', [])
+        trades_list = t_alt if isinstance(t_alt, list) else []
+    if trades_list:
+        if hasattr(trades_list[0], '__dict__'):
+            trades_df = pd.DataFrame([{k: v for k, v in t.__dict__.items()} for t in trades_list])
         else:
-            trades_df = pd.DataFrame(trades)
+            trades_df = pd.DataFrame(trades_list)
     else:
         trades_df = pd.DataFrame()
     
@@ -762,12 +783,15 @@ def run_bayesian_optimization(
                     max_lookback=max_lb_r,
                     progress=None,
                 )
-                trades_r = val_r.get('trades', [])
-                if trades_r and isinstance(trades_r, list):
-                    if hasattr(trades_r[0], '__dict__'):
-                        trades_df_r = pd.DataFrame([{k: v for k, v in t.__dict__.items()} for t in trades_r])
+                trades_list_r = val_r.get('trades_detail', [])
+                if not trades_list_r:
+                    t_alt_r = val_r.get('trades', [])
+                    trades_list_r = t_alt_r if isinstance(t_alt_r, list) else []
+                if trades_list_r:
+                    if hasattr(trades_list_r[0], '__dict__'):
+                        trades_df_r = pd.DataFrame([{k: v for k, v in t.__dict__.items()} for t in trades_list_r])
                     else:
-                        trades_df_r = pd.DataFrame(trades_r)
+                        trades_df_r = pd.DataFrame(trades_list_r)
                 else:
                     trades_df_r = pd.DataFrame()
                 val_reward_r = calculate_reward_metric(

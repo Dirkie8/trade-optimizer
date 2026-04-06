@@ -45,6 +45,7 @@ runtime:
   max_retries: 5
   reconnect_backoff_seconds: 5
   process_on_start: false             # Wait for next closed candle before first processing
+  warmup_days: 0                       # Simulate this many past days for concurrency gating before live trading
   log_path: "logs/trading_bot.log"
   journal_path: "scripts/outputs/trade_journal.csv"
   balance_journal_path: "scripts/outputs/balance_history.csv"
@@ -63,9 +64,9 @@ runtime:
 # Strategies to run. Use snake_case names and point to the strategy YAML to resolve module/class/results_dir.
 # Per-strategy you can override symbol/timeframe or inherit from `general`.
 strategies:
-  - name: keltner_squeeze_breakout
+  - name: keltner_squeeze_break_trend_no_vol
     enabled: true
-    strategy_config: functions/configs/keltner_squeeze_breakout.yaml
+    strategy_config: functions/configs/keltner_squeeze_break_trend_no_vol.yaml
     symbol: EURUSDm
     timeframe: "5m"
 

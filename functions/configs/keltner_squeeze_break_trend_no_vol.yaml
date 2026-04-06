@@ -1,0 +1,75 @@
+strategy:
+  class: KeltnerSqueezeBreakTrendNoVol
+  module: functions.strategies.keltner_squeeze_break_trend_no_vol
+  results_dir: keltner_squeeze_break_trend_no_vol
+name: Keltner Squeeze Break Trend (No Volume)
+# When using best_params below, interpret stop/take values with this scale (e.g., 0.11 -> 11 pips when scale=100)
+pips_param_scale: 1
+# Keys to scale by pips_param_scale
+pips_param_keys:
+  - stop_loss_pips
+  - take_profit_pips
+parameters:
+  period: [14, 20, 28]
+  bb_std: [1.5, 2.0, 2.5]
+  kc_mult: [1.2, 1.5, 2.0]
+  trend_ema: [100, 200, 300]
+  compression_ratio: [0.4, 0.6, 0.8]
+  breakout_atr_mult: [0.2, 0.3, 0.5]
+  take_profit_pips: [10, 15, 20]
+  stop_loss_pips: [8, 12, 16]
+parameters_bayesian:
+  period:
+  - 10
+  - 35
+  bb_std:
+  - 1.2
+  - 2.2
+  kc_mult: 
+  - 1.8
+  - 3.2
+  trend_ema:
+  - 50
+  - 250
+  compression_ratio: 
+  - 0.2
+  - 1.2
+  breakout_atr_mult: 
+  - 0.05
+  - 0.8
+  take_profit_pips:  
+  - 6.0
+  - 12.0
+  stop_loss_pips:    
+  - 4.0
+  - 12.0
+best_params:
+  period: 17
+  bb_std: 1.242
+  kc_mult: 2.996
+  trend_ema: 150
+  compression_ratio: 0.6
+  breakout_atr_mult: 0.3
+  take_profit_pips: 11.3
+  stop_loss_pips: 11.9
+
+best_params_x:
+  period: 17
+  bb_std: 1.2417472239683929
+  kc_mult: 2.9961328901142
+  take_profit_pips: 11.257479310639521
+  stop_loss_pips: 11.9056041867743
+  trend_ema: 206
+  compression_ratio: 1.17
+  breakout_atr_mult: 0.70
+  
+
+params_new:
+  period: 11
+  bb_std: 1.5391711916858712
+  kc_mult: 3.1903451527488804
+  trend_ema: 206
+  compression_ratio: 1.1706339577901521
+  breakout_atr_mult: 0.7058780422936323
+  take_profit_pips: 11.989077404200307
+  stop_loss_pips: 4.2096632477718 

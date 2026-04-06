@@ -4,9 +4,9 @@
 
 # NEW: Bayesian optimization (Recommended!)
 #------------------------------------------
-# Uses Optuna TPE sampler with custom reward metric
-# Automatically holds out 20% for validation
-# See BAYESIAN_OPTIMIZATION.md for full documentation
+Uses Optuna TPE sampler with custom reward metric
+Automatically holds out 20% for validation
+See BAYESIAN_OPTIMIZATION.md for full documentation
 
 # Single strategy:
 python scripts/optimize_bayesian.py \
@@ -306,10 +306,12 @@ Notes:
   --param_tolerance 0.0001 \
   --top_k_validation 10 \
   --yes \
-  --include "KeltnerSqueezeBreakout"
+
+  --include "KeltnerSqueezeBreakoutTrend"
 
 --include "DICross,FractalBreakout,HeikinAshiTrend,KeltnerSqueezeBreakout,KSTCrossover,PivotReversal,SMASlopeBreakout,StochasticOscillator"
 --include "AroonTrend,ATRBandReversion,BollingerBreakout,BollingerSqueezeBreakout,DICross,EMACrossover,EMAPullback,FractalBreakout,HeikinAshiReversal,HeikinAshiTrend,HullMACrossover,IchimokuKijunCross,KeltnerSqueezeBreakout,KSTCrossover,MACDMomentum,PivotReversal,PPOCrossover,PriceChannelReversion,SMASlopeBreakout,StochasticOscillator,StochRSIStrategy" \
+--include "BollingerSqueezeBreakout, FractalBreakout,     IchimokuKijunCross"
 
 # Evaluation
 ./run_full_backtest.sh --all
@@ -317,6 +319,10 @@ run_full_backtest.sh --all --param-source best_yaml
 python scripts/evaluate_strategy.py \
   --strategy_config functions/configs/keltner_squeeze_breakout.yaml \
   --main_config configs/main_config.yaml
+python scripts/evaluate_strategy.py \
+  --strategy_config functions/configs/keltner_squeeze_break_trend.yaml \
+  --main_config configs/main_config.yaml
+
 
 # Plotting and comparison
 python scripts/plot_results.py --batch --output-root results/images
@@ -324,10 +330,23 @@ python scripts/compare_bayesian_results.py --output results/analysis_opt.md
 python scripts/compare_bayesian_results.py --subdir evaluations --output results/analysis_evals.md
 
 python scripts/plot_results.py --input results/replay/replay_keltner.json --output-root results/replay
-python scripts/plot_results.py --input results/keltner_squeeze_breakout/evaluations/full_dataset_backtest.json --output-root images3
+python scripts/plot_results.py --input results/keltner_squeeze_breakout/evaluations/full_dataset_backtest.json
 
+python scripts/plot_results.py --input results/keltner_squeeze_break_trend/evaluations/full_dataset_backtest.json
+python scripts/plot_results.py --input results/keltner_squeeze_break_trend_no_vol/evaluations/full_dataset_backtest.json
 
-DICross,FractalBreakout,HeikinAshiTrend,KeltnerSqueezeBreakout,KSTCrossover,PivotReversal,SMASlopeBreakout,StochasticOscillator" \
+XXXXX
+./optimize_bayesian_wf_batch.sh \
+  --n_trials 800 \
+  --n_jobs 2 \
+  --n_folds 8 \
+  --validation_ratio 0.20 \
+  --reward balanced \
+  --top_k_validation 10 \
+  --yes \
+  --include "keltner_squeeze_break_trend_no_vol,keltner_squeeze_breakout"
+
+"DICross,FractalBreakout,HeikinAshiTrend,KeltnerSqueezeBreakout,KSTCrossover,PivotReversal,SMASlopeBreakout,StochasticOscillator" \
 
 # Trading bot
 python scripts/trading_bot.py --config configs/trading_bot_config.yaml --once --dry-run
@@ -340,7 +359,15 @@ Run a short replay and save results:
   python scripts/trading_bot.py --mode replay \
     --config configs/trading_bot_config.yaml \
     --replay-output results_test/replay_keltner.json \
-    --replay-start 2024-10-01 --replay-end 2024-10-04
+    --replay-start 2025-12-23 --replay-end 2025-12-31
+
+  python scripts/trading_bot.py --mode replay \
+    --config configs/trading_bot_config.yaml \
+    --replay-output results/replay/replay_keltner.json \
+    --replay-start 2025-12-23 --replay-end 2025-12-31
+    --replay-model parity_bot or parity or simple
+
+
   python scripts/trading_bot.py --mode replay \
     --config configs/trading_bot_config.yaml \
     --replay-output results/replay/keltner.json \
@@ -350,112 +377,6 @@ code configs/trading_bot_config.yaml  # edit the 'strategies' section (strategy_
 
 # Test to see if the optimizer and backtester "does the same thing"
 python check_eval_vs_backtest.py --eval full_dataset_backtest.json --strategy_config keltner_squeeze_breakout.yaml
-
-
-
-
-
-
-##### 2025-12-17 Latest flow
-##### ---------
-
-============================================================
-Quick explainer (v2 alignment) and how to run
-============================================================
-
-Why v2?
-- Train, evaluate, and trade all call the same strategy code path so live runs match what was optimized.
-- Uses a robust equity-based reward (not Sharpe) that favors smooth, drawdown-aware growth.
-- Keeps a strict hold-out validation set that’s only evaluated once after optimization (no leakage).
-
-What’s new in v2
-- Optimizer: scripts/optimize_bayesian_walkforward_v2.py
-  - Bayesian (Optuna TPE) + walk-forward on training only.
-  - Objective: reward_with_constraints(equity) with hard DD/terminal constraints.
-  - Fold aggregation configurable (mean, median, mean - λ·std) in configs/main_config.v2.yaml.
-  - Artifacts: results/<strategy_snake>/optimizations/
-    - bayesian_wf_v2_results.csv (all trials)
-    - bayesian_wf_v2_best.json (best params + metadata)
-
-- Evaluator: scripts/evaluate_strategy_v2.py
-  - Uses the same backtest path as optimizer (alignment).
-  - Picks params from v2 best artifact by default, with legacy fallbacks or YAML.
-  - Output: results/<strategy_snake>/evaluations/full_backtest_v2.json
-
-- Trading bot: scripts/trading_bot_v2.py
-  - Candle-close execution; SL/TP determined by the strategy (no implicit pips scaling).
-  - Lot sizing and broker margin checks retained; concise logs and CSV journals.
-  - Params source per strategy: YAML best_params or results best JSON (auto-discovered or explicit path).
-
-Configs (v2)
-- configs/main_config.v2.yaml: symbol/timeframe, account, optimization fold settings, reward params (k, eps, max DD).
-- configs/trading_bot_config.v2.yaml: account creds/runtime, risk, strategies list and params source.
-
-Reward function intuition
-- equity_reward multiplies scale-free growth (log-return) by smoothness terms:
-  - (1 − underwater_ratio) and exp(−k · normalized drawdown area),
-  - driving the search toward steady, low-drawdown equity curves.
-- reward_with_constraints rejects parameter sets with excessive DD or no terminal growth.
-
-How to run (v2)
-1) Prepare environment
-   - Ensure your Python env has: optuna, numpy, pandas, pyyaml, tqdm.
-   - For trading bot: MetaTrader5 and python-dotenv (if using .env for creds).
-
-2) Configure v2
-   - Edit configs/main_config.v2.yaml (symbol, timeframe, account, optimization, reward).
-   - Ensure your strategy YAML (functions/configs/<strategy>.yaml) includes:
-     - strategy.module and strategy.class
-     - parameters_bayesian ranges for optimization
-     - optional best_params for deployment
-
-3) Optimize (train-only, walk-forward)
-   python scripts/optimize_bayesian_walkforward_v2.py \
-     --strategy KeltnerSqueezeBreakout \
-     --n_trials 100 \
-     --n_jobs 1
-
-   Outputs under results/<strategy_snake>/optimizations/:
-   - bayesian_wf_v2_results.csv
-   - bayesian_wf_v2_best.json (used by evaluator/bot if selecting from results)
-
-4) Evaluate on full data
-   python scripts/evaluate_strategy_v2.py \
-     --strategy KeltnerSqueezeBreakout \
-     --params_source auto
-
-   Output: results/<strategy_snake>/evaluations/full_backtest_v2.json
-
-5) (Optional) Plot results
-   python scripts/plot_results.py --input results/<strategy_snake>/evaluations/full_backtest_v2.json
-   python scripts/plot_results.py --input results/keltner_squeeze_breakout/evaluations/full_backtest_v2.json
-   python scripts/plot_results.py --input results/keltner_squeeze_breakout/evaluations/validation_backtest_v2.json
-
-6) Trade live or paper (MT5)
-   - Edit configs/trading_bot_config.v2.yaml:
-     - Set account creds (or use .env: MT5_LOGIN, MT5_PASSWORD, MT5_SERVER)
-     - For each enabled strategy, set params_source:
-       - yaml (use best_params in YAML), or
-       - results (auto-discover bayesian_wf_v2_best.json or set params_results_path)
-
-   Run:
-   python scripts/trading_bot_v2.py --config configs/trading_bot_config.v2.yaml
-
-   Useful flags:
-   - --dry-run (compute and log orders only)
-   - --skip-start (wait for next candle close before first evaluation)
-   - --once (process one cycle and exit)
-
-Notes
-- v1 scripts remain for reference; prefer v2 for new runs.
-- Validation set is never used during optimization; only scored once at the end.
-- If you want more conservative selection, set fold aggregation to mean_var_penalty and tune variance_penalty_lambda.
-
-
-
-
-
-
 
 
 
@@ -479,3 +400,64 @@ python scripts/trading_bot.py --mode replay \
 python scripts/plot_results.py --input results/keltner_squeeze_breakout/evaluations/full_dataset_backtest.json --output-root images3
 python scripts/plot_results.py --input results/replay/replay_keltner.json --output-root results/replay
 
+
+
+
+
+##### 2026-01-19 Starting a new series of tests
+##### ---------
+
+# Starting with a simple trial to identify viable candidates.
+./optimize_bayesian_wf_batch.sh \
+--n_trials 100 \
+--n_jobs 4 \
+--n_folds 8 \
+--validation_ratio 0.20 \
+--reward balanced \
+--param_stagnation_patience 20 \
+--param_tolerance 0.0001 \
+--yes \
+# Im using these parameters because I want all possible trades to be taken during the optimisation:
+max_concurrent_positions: 100000
+  max_drawdown_stop_pct: 0   # stop trading after 30% drawdown
+  min_size: 0.01               # skip trades smaller than this size (enforce minimum lot 0.01)
+  max_lot_size: 0.01           # hard cap on position size (after leverage & rounding); set 0 or omit to disable
+
+# Run backtest on all
+./run_full_backtest.sh --all
+./run_full_backtest_v2.sh --all
+
+# Create images
+python scripts/plot_results.py --batch --output-root results/images
+
+
+
+nr7_breakout_bayesian_wf_optimization_results_validation_plot
+pivot_reversal_bayesian_wf_optimization_results_validation_plot
+rsi_strategy_bayesian_wf_optimization_results_validation_plot
+rsi2_mean_reversion_bayesian_wf_optimization_results_validation_plot
+stochastic_oscillator_bayesian_wf_optimization_results_validation_plot
+williams_r_mean_reversion_bayesian_wf_optimization_results_validation_plot.png
+keltner_squeeze_breakout_bayesian_wf_optimization_results_validation_plot
+
+
+
+# Look at the images in results/images and pick candidates for further testing.
+# Change the results folder name before running again to avoid overwriting.
+# Run longer optimisation
+./optimize_bayesian_wf_batch.sh \
+  --n_trials 800 \
+  --n_jobs 2 \
+  --n_folds 8 \
+  --validation_ratio 0.20 \
+  --reward balanced \
+  --param_stagnation_patience 50 \
+  --param_tolerance 0.0001 \
+  --top_k_validation 10 \
+  --yes \
+  --include "StochasticOscillator"
+
+
+--include "DICross,FractalBreakout,HeikinAshiTrend,KeltnerSqueezeBreakout,KSTCrossover,PivotReversal,SMASlopeBreakout,StochasticOscillator"
+--include "AroonTrend,ATRBandReversion,BollingerBreakout,BollingerSqueezeBreakout,DICross,EMACrossover,EMAPullback,FractalBreakout,HeikinAshiReversal,HeikinAshiTrend,HullMACrossover,IchimokuKijunCross,KeltnerSqueezeBreakout,KSTCrossover,MACDMomentum,PivotReversal,PPOCrossover,PriceChannelReversion,SMASlopeBreakout,StochasticOscillator,StochRSIStrategy" \
+--include "BollingerSqueezeBreakout, FractalBreakout,     IchimokuKijunCross

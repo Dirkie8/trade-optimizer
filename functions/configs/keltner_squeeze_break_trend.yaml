@@ -1,0 +1,73 @@
+strategy:
+  class: KeltnerSqueezeBreakTrend
+  module: functions.strategies.keltner_squeeze_break_trend
+  results_dir: keltner_squeeze_break_trend
+name: Keltner Squeeze Break Trend
+# When using best_params below, interpret stop/take values with this scale (e.g., 0.11 -> 11 pips when scale=100)
+pips_param_scale: 1
+# Keys to scale by pips_param_scale
+pips_param_keys:
+  - stop_loss_pips
+  - take_profit_pips
+parameters:
+  period:
+  - 8
+  - 20
+  bb_std:
+  - 1.2
+  - 1.8
+  kc_mult:
+  - 1.8
+  - 3.2
+  trend_ema:
+   - 100
+   - 300
+  compression_ratio:
+  - 0.1
+  - 0.8
+  breakout_atr_mult:
+  - 0.1
+  - 0.5
+  volume_mult:
+  - 1.0
+  - 4.0
+  take_profit_pips:
+  - 4.0
+  - 20.0
+  stop_loss_pips:
+  - 2.0
+  - 13.0
+parameters_bayesian:
+  period:
+  - 12
+  - 22
+  bb_std:
+  - 1.1
+  - 1.7
+  kc_mult:
+  - 2.2
+  - 3.4
+  trend_ema:
+   - 50
+   - 200
+  compression_ratio:
+  - 0.4
+  - 0.8
+  breakout_atr_mult:
+  - 0.1
+  - 0.5
+  volume_mult:
+  - 1.0
+  - 2.0
+  take_profit_pips:
+  - 6.0
+  - 14.0
+  stop_loss_pips:
+  - 6.0
+  - 14.0
+best_params:
+  period: 17
+  bb_std: 1.2417472239683929
+  kc_mult: 2.9961328901142
+  take_profit_pips: 11.257479310639521
+  stop_loss_pips: 11.9056041867743

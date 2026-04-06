@@ -1,6 +1,6 @@
 strategy:
   class: ZScoreMeanReversion
-  module: functions.strategies.zscore_mean_reversion
+  module: functions.strategies.z_score_mean_reversion
   results_dir: z_score_mean_reversion
 name: Z-Score Mean Reversion
 parameters:

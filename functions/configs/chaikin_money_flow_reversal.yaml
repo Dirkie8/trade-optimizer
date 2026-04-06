@@ -1,7 +1,7 @@
 strategy:
   class: CMFReversal
   module: functions.strategies.chaikin_money_flow_reversal
-  results_dir: cmf_reversal
+  results_dir: chaikin_money_flow_reversal
 name: Chaikin Money Flow Reversal
 parameters:
   cmf_period:

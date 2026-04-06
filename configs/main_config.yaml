@@ -1,19 +1,19 @@
 account:
   starting_balance: 100
-  risk_per_trade: 0.10
+  risk_per_trade: 0.05
   spread_pips: 0.2
   commission_per_trade: 0.0
   leverage: 100
   # New: maximum number of concurrent open positions allowed in backtests/optimization.
   # If set to 1 (default) behavior is unchanged (single position at a time).
   # If >1 the backtester will allow multiple trades to be opened and managed independently.
-  max_concurrent_positions: 1
+  max_concurrent_positions: 4
   max_drawdown_stop_pct: 0   # stop trading after 30% drawdown
   slippage_pips: 0.1          # 0.1 pips unfavorable slippage per fill
   min_stop_pips: 0            # ignore SLs tighter than 3 pips
   min_size: 0.01               # skip trades smaller than this size (enforce minimum lot 0.01)
   lot_step: 0.01               # round position size down to nearest 0.01 lot increment
-  max_lot_size: 0.01           # hard cap on position size (after leverage & rounding); set 0 or omit to disable
+  max_lot_size: 0.05           # hard cap on position size (after leverage & rounding); set 0 or omit to disable
   contract_size: 100000        # units per 1.0 lot (forex standard)
   pip_value_per_lot: 10.0      # USD value per pip for 1 lot on EURUSD-like pairs (override as needed)
   equity_rounding: 0.01        # round equity to the nearest cent for realism
